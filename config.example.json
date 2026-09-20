@@ -1,0 +1,16 @@
+{
+  "listen": "127.0.0.1:8080",
+  "routers": [
+    {
+      "id": 1,
+      "name": "НАЗВАНИЕ",
+      "firmware": "keenetic",
+      "tunnel_port": 22001,
+      "ssh_user": "root",
+      "auth_type": "password",
+      "auth_secret": "ЗАПОЛНИТЬ",
+      "host_key": "ssh-ed25519 AAAA... (ssh-keyscan -p 22001 127.0.0.1)",
+      "allow_unknown_host_key": false
+    }
+  ]
+}
