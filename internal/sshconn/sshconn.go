@@ -52,7 +52,7 @@ func Dial(t Target) (*Client, error) {
 		return nil, fmt.Errorf("%w: %v", ErrOffline, err)
 	}
 
-	// мёртвый туннель отвечает на tcp, но висит на обмене ключами
+	// мёртвый туннель отвечает на tcp
 	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
 		conn.Close()
 		return nil, err
@@ -128,7 +128,6 @@ func (c *Client) keepalive() {
 func authMethod(t Target) ([]ssh.AuthMethod, error) {
 	switch t.AuthType {
 	case "password":
-		// dropbear на части прошивок умеет только keyboard-interactive
 		ki := ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
 			answers := make([]string, len(questions))
 			for i := range answers {
@@ -148,7 +147,6 @@ func authMethod(t Target) ([]ssh.AuthMethod, error) {
 	}
 }
 
-// таймаут это молчащий роутер, остальное — наша конфигурация
 func handshakeError(err error) error {
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
