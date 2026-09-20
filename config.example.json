@@ -2,5 +2,7 @@
   "listen": "127.0.0.1:8080",
   "db_path": "/etc/router-toggle/router-toggle.db",
   "server_key": "openssl rand -hex 32",
-  "admin_code": "openssl rand -hex 16"
+  "admin_code": "придумать, без символов 0 1 I O",
+  "telegram_token": "токен от @BotFather, пусто — уведомления выключены",
+  "telegram_chat_id": "свой chat_id"
 }

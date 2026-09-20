@@ -16,6 +16,7 @@ import (
 
 	"router-toggle/internal/api"
 	"router-toggle/internal/auth"
+	"router-toggle/internal/notify"
 	"router-toggle/internal/router"
 	"router-toggle/internal/sshconn"
 	"router-toggle/internal/store"
@@ -27,6 +28,7 @@ type server struct {
 	st      *store.Store
 	locks   *routerLocks
 	limiter *auth.Limiter
+	tg      *notify.Telegram
 }
 
 // кто пришёл по коду
@@ -38,6 +40,7 @@ type actor struct {
 func main() {
 	configPath := flag.String("config", "/etc/router-toggle/config.json", "путь к конфигурации")
 	printCodes := flag.Bool("codes", false, "напечатать коды всех роутеров и выйти")
+	showLog := flag.Int("log", 0, "напечатать последние N записей журнала и выйти")
 	importFrom := flag.String("import", "", "импортировать роутеры из старого json и выйти")
 	flag.Parse()
 
@@ -66,7 +69,21 @@ func main() {
 		return
 	}
 
-	s := &server{cfg: cfg, key: key, st: st, locks: newRouterLocks(), limiter: auth.NewLimiter()}
+	if *showLog > 0 {
+		if err := printLog(st, *showLog); err != nil {
+			log.Fatalf("журнал: %v", err)
+		}
+		return
+	}
+
+	s := &server{
+		cfg:     cfg,
+		key:     key,
+		st:      st,
+		locks:   newRouterLocks(),
+		limiter: auth.NewLimiter(),
+		tg:      notify.New(cfg.TelegramToken, cfg.TelegramChatID),
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +102,7 @@ func main() {
 		Addr:              cfg.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      3 * time.Minute,
+		WriteTimeout: 3 * time.Minute,
 	}
 	log.Printf("rt-server слушает %s, роутеров в базе: %d", cfg.Listen, len(routers))
 	log.Fatal(srv.ListenAndServe())
@@ -99,6 +116,19 @@ func printRouterCodes(st *store.Store, key []byte) error {
 	for _, r := range routers {
 		fmt.Printf("%-24s %-9s порт %d   %s\n",
 			r.Name, r.Firmware, r.TunnelPort, auth.Format(auth.Code(key, r.TunnelPort)))
+	}
+	return nil
+}
+
+func printLog(st *store.Store, n int) error {
+	entries, err := st.RecentLog(n)
+	if err != nil {
+		return err
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		fmt.Printf("%s  id=%-2d %-6s %-10s %-9v %-5s %s\n",
+			e.TS, e.RouterID, e.Actor, e.Op, e.Value, e.Result, e.Detail)
 	}
 	return nil
 }
@@ -183,7 +213,7 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 
 	client, ctrl, err := s.connect(rc)
 	if err != nil {
-		s.st.Log(rc.ID, who, req.Op, req.Value, errorCode(err), err.Error())
+		s.report(rc, who, req, err)
 		writeError(w, http.StatusBadGateway, errorCode(err), err)
 		return
 	}
@@ -192,8 +222,7 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	state, err := router.Apply(client, ctrl, router.Op(req.Op), req.Value)
 	if err != nil {
 		log.Printf("apply router=%d op=%s value=%v: %v", rc.ID, req.Op, req.Value, err)
-		s.st.Log(rc.ID, who, req.Op, req.Value, errorCode(err), err.Error())
-		// todo(шаг 6): уведомление в тг
+		s.report(rc, who, req, err)
 		writeError(w, http.StatusBadGateway, errorCode(err), err)
 		return
 	}
@@ -201,6 +230,26 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	s.st.Log(rc.ID, who, req.Op, req.Value, "ok", "")
 
 	writeJSON(w, http.StatusOK, stateResponse(rc, req.Op, state, time.Now().UTC(), false))
+}
+
+// журнал и уведомление об одной неудаче
+func (s *server) report(rc store.Router, who string, req api.ApplyRequest, err error) {
+	code := errorCode(err)
+	s.st.Log(rc.ID, who, req.Op, req.Value, code, err.Error())
+
+	action := "включить"
+	if !req.Value {
+		action = "выключить"
+	}
+	text := fmt.Sprintf("%s\nРоутер: %s (%s, id=%d)\nОперация: %s %s\nКто: %s\n\n%v",
+		code, rc.Name, rc.Firmware, rc.ID, action, req.Op, who, err)
+
+	key := fmt.Sprintf("%d:%s", rc.ID, code)
+	if code == api.ErrRollbackFailed {
+		text = "ТРЕБУЕТСЯ ВМЕШАТЕЛЬСТВО\n\n" + text
+		key = ""
+	}
+	s.tg.Send(key, text)
 }
 
 func (s *server) resolve(w http.ResponseWriter, r *http.Request, code string) (actor, bool) {
@@ -239,7 +288,7 @@ func (s *server) resolve(w http.ResponseWriter, r *http.Request, code string) (a
 	return actor{}, false
 }
 
-// вместо блокировки задержка
+// задержка
 func (s *server) failed(ip string, known bool) {
 	if known {
 		s.limiter.Fail(ip)
@@ -248,6 +297,7 @@ func (s *server) failed(ip string, known bool) {
 	time.Sleep(time.Second)
 }
 
+// клиенту свой роутер, админу запрошенный
 func (s *server) pick(w http.ResponseWriter, a actor, requested int) (store.Router, bool) {
 	id := a.routerID
 	if a.admin {

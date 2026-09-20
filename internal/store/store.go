@@ -1,4 +1,3 @@
-// роутеры, кэш состояния и журнал
 package store
 
 import (
@@ -148,6 +147,37 @@ func (s *Store) Log(routerID int, actor, op string, value bool, result, detail s
 	_, _ = s.db.Exec(`INSERT INTO audit_log (ts, router_id, actor, op, value, result, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		now(), routerID, actor, op, boolToInt(value), result, detail)
+}
+
+type LogEntry struct {
+	TS       string
+	RouterID int
+	Actor    string
+	Op       string
+	Value    bool
+	Result   string
+	Detail   string
+}
+
+func (s *Store) RecentLog(n int) ([]LogEntry, error) {
+	rows, err := s.db.Query(`SELECT ts, router_id, actor, op, value, result, detail
+		FROM audit_log ORDER BY id DESC LIMIT ?`, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []LogEntry
+	for rows.Next() {
+		var e LogEntry
+		var v int
+		if err := rows.Scan(&e.TS, &e.RouterID, &e.Actor, &e.Op, &v, &e.Result, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.Value = v == 1
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }

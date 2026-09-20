@@ -15,6 +15,9 @@ type Config struct {
 	DBPath    string `json:"db_path"`
 	ServerKey string `json:"server_key"` // hex
 	AdminCode string `json:"admin_code"`
+
+	TelegramToken  string `json:"telegram_token"`
+	TelegramChatID string `json:"telegram_chat_id"`
 }
 
 func LoadConfig(path string) (*Config, []byte, error) {
