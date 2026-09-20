@@ -16,6 +16,7 @@ import (
 )
 
 const opTitle = "Проксирование портов Steam / FACEIT EU"
+const defaultAPI = "https://rt.mwh4t.lol"
 
 func main() {
 	apiURL := flag.String("api", "", "адрес сервера (переопределяет сохранённый)")
@@ -38,9 +39,7 @@ func main() {
 		cfg.APIURL = *apiURL
 	}
 	if cfg.APIURL == "" {
-		if err := ask("Адрес сервера:", &cfg.APIURL); err != nil {
-			fail(err)
-		}
+		cfg.APIURL = defaultAPI
 	}
 	cfg.APIURL = strings.TrimRight(cfg.APIURL, "/")
 
