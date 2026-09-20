@@ -1,0 +1,13 @@
+[Unit]
+Description=router-toggle admin bot
+After=network.target rt-server.service
+
+[Service]
+WorkingDirectory=/opt/rt-bot
+ExecStart=/opt/rt-bot/venv/bin/python bot.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

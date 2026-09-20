@@ -41,6 +41,25 @@ type StateResponse struct {
 	Ops    []OpState  `json:"ops"`
 }
 
+type LogRequest struct {
+	Code  string `json:"code"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type LogEntry struct {
+	TS       string `json:"ts"`
+	RouterID int    `json:"router_id"`
+	Actor    string `json:"actor"`
+	Op       string `json:"op"`
+	Value    bool   `json:"value"`
+	Result   string `json:"result"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+type LogResponse struct {
+	Entries []LogEntry `json:"entries"`
+}
+
 type RoutersResponse struct {
 	Routers []RouterInfo `json:"routers"`
 }

@@ -92,6 +92,7 @@ func main() {
 	mux.HandleFunc("/v1/routers", s.handleRouters)
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/apply", s.handleApply)
+	mux.HandleFunc("/v1/log", s.handleLog)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -102,7 +103,7 @@ func main() {
 		Addr:              cfg.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout: 3 * time.Minute,
+		WriteTimeout:      3 * time.Minute,
 	}
 	log.Printf("rt-server слушает %s, роутеров в базе: %d", cfg.Listen, len(routers))
 	log.Fatal(srv.ListenAndServe())
@@ -155,6 +156,39 @@ func (s *server) handleRouters(w http.ResponseWriter, r *http.Request) {
 	out := api.RoutersResponse{}
 	for _, rc := range routers {
 		out.Routers = append(out.Routers, api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// журнал только для админа
+func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
+	var req api.LogRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	if !a.admin {
+		writeError(w, http.StatusForbidden, api.ErrBadCode, nil)
+		return
+	}
+	if req.Limit <= 0 || req.Limit > 100 {
+		req.Limit = 20
+	}
+
+	entries, err := s.st.RecentLog(req.Limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+		return
+	}
+	out := api.LogResponse{}
+	for _, e := range entries {
+		out.Entries = append(out.Entries, api.LogEntry{
+			TS: e.TS, RouterID: e.RouterID, Actor: e.Actor,
+			Op: e.Op, Value: e.Value, Result: e.Result, Detail: e.Detail,
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
