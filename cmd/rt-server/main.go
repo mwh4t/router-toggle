@@ -1,4 +1,4 @@
-// localhost без tls, авторизация по коду
+// localhost без tls
 package main
 
 import (
@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"router-toggle/internal/api"
@@ -203,15 +204,15 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) resolve(w http.ResponseWriter, r *http.Request, code string) (actor, bool) {
-	ip := clientIP(r)
-	if s.limiter.Blocked(ip) {
+	ip, known := clientIP(r)
+	if known && s.limiter.Blocked(ip) {
 		writeError(w, http.StatusTooManyRequests, api.ErrTooManyAttempts, nil)
 		return actor{}, false
 	}
 
 	got := auth.Normalize(code)
 	if got == "" {
-		s.limiter.Fail(ip)
+		s.failed(ip, known)
 		writeError(w, http.StatusUnauthorized, api.ErrBadCode, nil)
 		return actor{}, false
 	}
@@ -233,9 +234,18 @@ func (s *server) resolve(w http.ResponseWriter, r *http.Request, code string) (a
 		}
 	}
 
-	s.limiter.Fail(ip)
+	s.failed(ip, known)
 	writeError(w, http.StatusUnauthorized, api.ErrBadCode, nil)
 	return actor{}, false
+}
+
+// вместо блокировки задержка
+func (s *server) failed(ip string, known bool) {
+	if known {
+		s.limiter.Fail(ip)
+		return
+	}
+	time.Sleep(time.Second)
 }
 
 func (s *server) pick(w http.ResponseWriter, a actor, requested int) (store.Router, bool) {
@@ -251,7 +261,6 @@ func (s *server) pick(w http.ResponseWriter, a actor, requested int) (store.Rout
 	return rc, true
 }
 
-// кэш с пометкой stale
 func (s *server) readState(rc store.Router, op string) (bool, time.Time, bool, error) {
 	client, ctrl, err := s.connect(rc)
 	if err == nil {
@@ -331,12 +340,28 @@ func (s *server) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func clientIP(r *http.Request) string {
+// за nginx реальный адрес приходит только в заголовке
+func clientIP(r *http.Request) (string, bool) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		ip = r.RemoteAddr
 	}
-	return ip
+	if !isLoopback(ip) {
+		return ip, true
+	}
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.Split(fwd, ",")
+		last := strings.TrimSpace(parts[len(parts)-1])
+		if last != "" && !isLoopback(last) {
+			return last, true
+		}
+	}
+	return ip, false
+}
+
+func isLoopback(ip string) bool {
+	parsed := net.ParseIP(ip)
+	return parsed != nil && parsed.IsLoopback()
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
