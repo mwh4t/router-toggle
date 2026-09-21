@@ -1,4 +1,3 @@
-// контроллеры прошивок и протокол применения
 package router
 
 import (
@@ -52,6 +51,11 @@ type Plan struct {
 func (p *Plan) Empty() bool { return p == nil || len(p.Changes) == 0 }
 
 type Controller interface {
+	VPNState(r Runner) (bool, error)
+	SetVPN(r Runner, on bool) error
+	ProxyRunning(r Runner) (bool, error)
+	Reboot(r Runner) error
+
 	Firmware() string
 	SupportedOps() []Op
 	ReadState(r Runner, op Op) (bool, error)

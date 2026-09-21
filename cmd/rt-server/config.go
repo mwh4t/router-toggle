@@ -15,6 +15,7 @@ type Config struct {
 	DBPath    string `json:"db_path"`
 	ServerKey string `json:"server_key"` // hex
 	AdminCode string `json:"admin_code"`
+	PublicIP  string `json:"public_ip"` // проверка соединения с vps
 
 	TelegramToken  string `json:"telegram_token"`
 	TelegramChatID string `json:"telegram_chat_id"`
@@ -84,4 +85,27 @@ func (l *routerLocks) release(routerID int) {
 		default:
 		}
 	}
+}
+
+type cooldown struct {
+	mu    sync.Mutex
+	every time.Duration
+	last  map[int]time.Time
+}
+
+func newCooldown(every time.Duration) *cooldown {
+	return &cooldown{every: every, last: map[int]time.Time{}}
+}
+
+func (c *cooldown) allow(routerID int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at, ok := c.last[routerID]
+	return !ok || time.Since(at) >= c.every
+}
+
+func (c *cooldown) mark(routerID int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.last[routerID] = time.Now()
 }

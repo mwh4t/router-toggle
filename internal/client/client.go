@@ -1,4 +1,3 @@
-// обращения к api сервера
 package client
 
 import (
@@ -45,6 +44,17 @@ func (c *Client) Apply(routerID int, op string, value bool) (api.StateResponse, 
 	return out, err
 }
 
+func (c *Client) Reboot(routerID int) error {
+	var out map[string]string
+	return c.post("/v1/reboot", api.ActionRequest{Code: c.code, RouterID: routerID}, &out)
+}
+
+func (c *Client) Check(routerID int) (api.HealthResponse, error) {
+	var out api.HealthResponse
+	err := c.post("/v1/check", api.ActionRequest{Code: c.code, RouterID: routerID}, &out)
+	return out, err
+}
+
 func (c *Client) Routers() (api.RoutersResponse, error) {
 	var out api.RoutersResponse
 	err := c.post("/v1/routers", api.StatusRequest{Code: c.code}, &out)
@@ -73,7 +83,9 @@ func (c *Client) post(path string, body, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		var e api.ErrorResponse
 		if err := json.NewDecoder(resp.Body).Decode(&e); err != nil || e.Code == "" {
-			return &APIError{Code: api.ErrInternal, Message: api.Message(api.ErrInternal)}
+			// сервер не понял запрос
+			return &APIError{Code: api.ErrInternal,
+				Message: "Сервер ответил неожиданно. Возможно, нужна новая версия приложения."}
 		}
 		return &APIError{Code: e.Code, Message: e.Message}
 	}

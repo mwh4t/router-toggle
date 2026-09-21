@@ -1,4 +1,3 @@
-// уведомления администратору
 package notify
 
 import (

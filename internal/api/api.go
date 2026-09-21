@@ -1,4 +1,3 @@
-// контракт между клиентом и сервером
 package api
 
 import "time"
@@ -9,7 +8,10 @@ const (
 )
 
 // закрытый список операций
-const OpUDPProxy = "udp_proxy"
+const (
+	OpUDPProxy = "udp_proxy"
+	OpVPN      = "vpn" // до перезагрузки роутера
+)
 
 type StatusRequest struct {
 	Code     string `json:"code,omitempty"`
@@ -21,6 +23,23 @@ type ApplyRequest struct {
 	RouterID int    `json:"router_id,omitempty"`
 	Op       string `json:"op"`
 	Value    bool   `json:"value"`
+}
+
+type ActionRequest struct {
+	Code     string `json:"code,omitempty"`
+	RouterID int    `json:"router_id,omitempty"`
+}
+
+// ok, fail, off или skip
+type Check struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Hint  string `json:"hint,omitempty"`
+}
+
+type HealthResponse struct {
+	Router RouterInfo `json:"router"`
+	Checks []Check    `json:"checks"`
 }
 
 type RouterInfo struct {
@@ -79,6 +98,8 @@ const (
 	ErrApplyRolledBack = "E-12"
 	ErrRollbackFailed  = "E-13"
 	ErrRouterBusy      = "E-14"
+	ErrRebootCooldown  = "E-15"
+	ErrServiceFailed   = "E-16"
 	ErrInternal        = "E-20"
 )
 
@@ -91,6 +112,8 @@ var messages = map[string]string{
 	ErrApplyRolledBack: "Не получилось применить настройку. Всё вернул как было. Администратор уведомлён.",
 	ErrRollbackFailed:  "Роутер в неопределённом состоянии. Администратор уже уведомлён, свяжитесь с ним.",
 	ErrRouterBusy:      "Роутер сейчас занят, попробуйте через минуту.",
+	ErrRebootCooldown:  "Роутер недавно перезагружался, подождите несколько минут.",
+	ErrServiceFailed:   "Не удалось переключить VPN. Администратор уведомлён.",
 	ErrInternal:        "Внутренняя ошибка. Администратор уведомлён.",
 }
 

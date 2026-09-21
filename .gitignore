@@ -308,5 +308,7 @@ poetry.toml
 pyrightconfig.json
 
 SPEC.md
+/.env
+/dist/
 /rt-server
 bot/.env

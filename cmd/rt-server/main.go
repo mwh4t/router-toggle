@@ -1,4 +1,3 @@
-// localhost без tls
 package main
 
 import (
@@ -29,9 +28,9 @@ type server struct {
 	locks   *routerLocks
 	limiter *auth.Limiter
 	tg      *notify.Telegram
+	reboots *cooldown
 }
 
-// кто пришёл по коду
 type actor struct {
 	admin    bool
 	routerID int
@@ -83,6 +82,7 @@ func main() {
 		locks:   newRouterLocks(),
 		limiter: auth.NewLimiter(),
 		tg:      notify.New(cfg.TelegramToken, cfg.TelegramChatID),
+		reboots: newCooldown(10 * time.Minute),
 	}
 
 	mux := http.NewServeMux()
@@ -93,6 +93,8 @@ func main() {
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/apply", s.handleApply)
 	mux.HandleFunc("/v1/log", s.handleLog)
+	mux.HandleFunc("/v1/reboot", s.handleReboot)
+	mux.HandleFunc("/v1/check", s.handleCheck)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -207,12 +209,15 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state, readAt, stale, err := s.readState(rc, api.OpUDPProxy)
+	ops, err := s.readStates(rc)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, errorCode(err), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, stateResponse(rc, api.OpUDPProxy, state, readAt, stale))
+	writeJSON(w, http.StatusOK, api.StateResponse{
+		Router: api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware},
+		Ops:    ops,
+	})
 }
 
 func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +229,7 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Op != api.OpUDPProxy {
+	if req.Op != api.OpUDPProxy && req.Op != api.OpVPN {
 		// закрытый список
 		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, nil)
 		return
@@ -253,7 +258,12 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	state, err := router.Apply(client, ctrl, router.Op(req.Op), req.Value)
+	var state bool
+	if req.Op == api.OpVPN {
+		state, err = router.ApplyVPN(client, ctrl, req.Value)
+	} else {
+		state, err = router.Apply(client, ctrl, router.Op(req.Op), req.Value)
+	}
 	if err != nil {
 		log.Printf("apply router=%d op=%s value=%v: %v", rc.ID, req.Op, req.Value, err)
 		s.report(rc, who, req, err)
@@ -264,6 +274,143 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	s.st.Log(rc.ID, who, req.Op, req.Value, "ok", "")
 
 	writeJSON(w, http.StatusOK, stateResponse(rc, req.Op, state, time.Now().UTC(), false))
+}
+
+// не чаще раза в 10 минут на роутер
+func (s *server) handleReboot(w http.ResponseWriter, r *http.Request) {
+	var req api.ActionRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	rc, ok := s.pick(w, a, req.RouterID)
+	if !ok {
+		return
+	}
+	if !s.reboots.allow(rc.ID) {
+		writeError(w, http.StatusTooManyRequests, api.ErrRebootCooldown, nil)
+		return
+	}
+
+	if !s.locks.acquire(rc.ID) {
+		writeError(w, http.StatusConflict, api.ErrRouterBusy, nil)
+		return
+	}
+	defer s.locks.release(rc.ID)
+
+	who := actorName(a)
+	client, ctrl, err := s.connect(rc)
+	if err != nil {
+		s.st.Log(rc.ID, who, "reboot", true, errorCode(err), err.Error())
+		writeError(w, http.StatusBadGateway, errorCode(err), err)
+		return
+	}
+	defer client.Close()
+
+	if err := ctrl.Reboot(client); err != nil {
+		s.st.Log(rc.ID, who, "reboot", true, api.ErrInternal, err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrInternal, err)
+		return
+	}
+	s.reboots.mark(rc.ID)
+	s.st.Log(rc.ID, who, "reboot", true, "ok", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rebooting"})
+}
+
+func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
+	var req api.ActionRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	rc, ok := s.pick(w, a, req.RouterID)
+	if !ok {
+		return
+	}
+
+	info := api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware}
+	resp := api.HealthResponse{Router: info}
+
+	client, ctrl, err := s.connect(rc)
+	if err != nil {
+		resp.Checks = []api.Check{{Name: "Роутер на связи", State: "fail",
+			Hint: "роутер выключен или без интернета"}}
+		s.notifyCheck(rc, actorName(a), resp.Checks, err)
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	defer client.Close()
+
+	h, err := router.CheckHealth(client, ctrl, s.cfg.PublicIP)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, api.ErrInternal, err)
+		return
+	}
+	resp.Checks = healthChecks(h)
+	s.notifyCheck(rc, actorName(a), resp.Checks, nil)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func healthChecks(h router.Health) []api.Check {
+	checks := []api.Check{{Name: "Роутер на связи", State: "ok"}}
+
+	internet := api.Check{Name: "Интернет у роутера", State: "ok"}
+	if !h.Internet {
+		internet.State, internet.Hint = "fail", "проблема у провайдера"
+	}
+	checks = append(checks, internet)
+
+	proxy := api.Check{Name: "Служба прокси", State: "ok"}
+	switch {
+	case !h.VPNOn:
+		proxy.State, proxy.Hint = "off", "vpn выключен до перезагрузки роутера"
+	case !h.Proxy:
+		proxy.State, proxy.Hint = "fail", "попробуйте перезагрузить роутер"
+	}
+	checks = append(checks, proxy)
+
+	vps := api.Check{Name: "Соединение с VPN-сервером", State: "ok"}
+	switch {
+	case !h.VPSKnown:
+		vps.State = "skip"
+	case !h.VPNOn:
+		vps.State = "off"
+	case !h.VPS:
+		vps.State, vps.Hint = "fail", "попробуйте перезагрузить роутер"
+	}
+	checks = append(checks, vps)
+	return checks
+}
+
+func (s *server) notifyCheck(rc store.Router, who string, checks []api.Check, err error) {
+	var failed []string
+	for _, c := range checks {
+		if c.State == "fail" {
+			failed = append(failed, c.Name)
+		}
+	}
+	if len(failed) == 0 {
+		return
+	}
+	text := fmt.Sprintf("Проверка: проблемы\nРоутер: %s (%s, id=%d)\nКто: %s\n\n%s",
+		rc.Name, rc.Firmware, rc.ID, who, strings.Join(failed, "\n"))
+	if err != nil {
+		text += fmt.Sprintf("\n\n%v", err)
+	}
+	s.tg.Send(fmt.Sprintf("%d:check:%s", rc.ID, strings.Join(failed, ",")), text)
+}
+
+func actorName(a actor) string {
+	if a.admin {
+		return "admin"
+	}
+	return "client"
 }
 
 // журнал и уведомление об одной неудаче
@@ -322,7 +469,7 @@ func (s *server) resolve(w http.ResponseWriter, r *http.Request, code string) (a
 	return actor{}, false
 }
 
-// задержка
+// вместо блокировки задержка
 func (s *server) failed(ip string, known bool) {
 	if known {
 		s.limiter.Fail(ip)
@@ -345,24 +492,47 @@ func (s *server) pick(w http.ResponseWriter, a actor, requested int) (store.Rout
 	return rc, true
 }
 
-func (s *server) readState(rc store.Router, op string) (bool, time.Time, bool, error) {
+var statusOps = []string{api.OpUDPProxy, api.OpVPN}
+
+func (s *server) readStates(rc store.Router) ([]api.OpState, error) {
 	client, ctrl, err := s.connect(rc)
 	if err == nil {
 		defer client.Close()
-		var state bool
-		state, err = ctrl.ReadState(client, router.Op(op))
+		now := time.Now().UTC()
+		out := make([]api.OpState, 0, len(statusOps))
+		for _, op := range statusOps {
+			var v bool
+			v, err = readOp(client, ctrl, op)
+			if err != nil {
+				break
+			}
+			_ = s.st.CachePut(rc.ID, op, v)
+			out = append(out, api.OpState{Op: op, Value: v, ReadAt: now})
+		}
 		if err == nil {
-			_ = s.st.CachePut(rc.ID, op, state)
-			return state, time.Now().UTC(), false, nil
+			return out, nil
 		}
 	}
 
-	if errors.Is(err, sshconn.ErrOffline) {
-		if v, at, ok := s.st.CacheGet(rc.ID, op); ok {
-			return v, at, true, nil
-		}
+	if !errors.Is(err, sshconn.ErrOffline) {
+		return nil, err
 	}
-	return false, time.Time{}, false, err
+	out := make([]api.OpState, 0, len(statusOps))
+	for _, op := range statusOps {
+		v, at, ok := s.st.CacheGet(rc.ID, op)
+		if !ok {
+			return nil, err
+		}
+		out = append(out, api.OpState{Op: op, Value: v, ReadAt: at, Stale: true})
+	}
+	return out, nil
+}
+
+func readOp(r router.Runner, c router.Controller, op string) (bool, error) {
+	if op == api.OpVPN {
+		return c.VPNState(r)
+	}
+	return c.ReadState(r, router.Op(op))
 }
 
 func (s *server) connect(rc store.Router) (*sshconn.Client, router.Controller, error) {
@@ -403,6 +573,8 @@ func errorCode(err error) string {
 		return api.ErrRollbackFailed
 	case errors.Is(err, router.ErrRolledBack):
 		return api.ErrApplyRolledBack
+	case errors.Is(err, router.ErrServiceFailed):
+		return api.ErrServiceFailed
 	default:
 		return api.ErrInternal
 	}
@@ -424,7 +596,6 @@ func (s *server) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-// за nginx реальный адрес приходит только в заголовке
 func clientIP(r *http.Request) (string, bool) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

@@ -15,7 +15,8 @@ import (
 )
 
 const opTitle = "Проксирование портов Steam / FACEIT EU"
-const defaultAPI = "https://rt.mwh4t.lol"
+
+var defaultAPI = "" // задаётся при сборке
 
 func main() {
 	apiURL := flag.String("api", "", "адрес сервера (переопределяет сохранённый)")
@@ -40,6 +41,11 @@ func main() {
 	}
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultAPI
+	}
+	if cfg.APIURL == "" {
+		if err := ask("Адрес сервера:", &cfg.APIURL); err != nil {
+			fail(err)
+		}
 	}
 	cfg.APIURL = strings.TrimRight(cfg.APIURL, "/")
 
@@ -69,7 +75,6 @@ func main() {
 		} else {
 			routerLoop(c, 0, len(cfg.Entries) == 1)
 		}
-		// один код
 		if len(cfg.Entries) == 1 {
 			return
 		}
@@ -219,41 +224,118 @@ func routerLoop(c *client.Client, routerID int, showName bool) {
 			continue
 		}
 
-		op := state.Ops[0]
+		udp, vpn := findOp(state, api.OpUDPProxy), findOp(state, api.OpVPN)
 		fmt.Println()
 		if showName {
 			fmt.Printf("Роутер: %s\n", state.Router.Name)
 		}
-		if op.Stale {
-			fmt.Printf("Роутер не отвечает. Последнее известное состояние: %s (%s)\n",
-				onOff(op.Value), ago(op.ReadAt))
-			fmt.Println("Проверьте, что роутер включён и подключён к интернету.")
-		} else {
-			fmt.Printf("%s: %s\n", opTitle, onOff(op.Value))
+		if udp.Stale {
+			fmt.Printf("Роутер не отвечает. Последнее известное состояние (%s):\n", ago(udp.ReadAt))
+		}
+		fmt.Printf("%s: %s\n", opTitle, onOff(udp.Value))
+		if vpn.Op != "" {
+			fmt.Printf("VPN: %s\n", vpnText(vpn.Value))
 		}
 
-		action := "Включить"
-		if op.Value {
-			action = "Выключить"
+		const (
+			optCheck  = "Проверить, всё ли в порядке"
+			optReboot = "Перезагрузить роутер"
+			optReload = "Обновить"
+			optExit   = "Выход"
+		)
+		optUDP := "Включить проксирование портов"
+		if udp.Value {
+			optUDP = "Выключить проксирование портов"
 		}
-		options := []string{action, "Обновить", "Выход"}
+		optVPN := "Выключить VPN до перезагрузки роутера"
+		if !vpn.Value {
+			optVPN = "Включить VPN"
+		}
+
+		options := []string{optUDP}
+		if vpn.Op != "" {
+			options = append(options, optVPN)
+		}
+		options = append(options, optCheck, optReboot, optReload, optExit)
 
 		var choice string
-		if err := selectOne("", options, &choice); err != nil || choice == "Выход" {
+		if err := selectOne("", options, &choice); err != nil || choice == optExit {
 			return
 		}
-		if choice == "Обновить" {
-			continue
-		}
 
-		fmt.Println("Применяю...")
-		res, err := c.Apply(routerID, api.OpUDPProxy, !op.Value)
-		if err != nil {
-			report(err)
+		switch choice {
+		case optReload:
 			continue
+		case optCheck:
+			runCheck(c, routerID)
+		case optReboot:
+			if confirm("Перезагрузить роутер? Интернет пропадёт на 1-2 минуты.") {
+				if err := c.Reboot(routerID); err != nil {
+					report(err)
+				} else {
+					fmt.Println("Роутер перезагружается. Проверьте состояние через пару минут.")
+				}
+			}
+		case optVPN:
+			fmt.Println("Применяю...")
+			res, err := c.Apply(routerID, api.OpVPN, !vpn.Value)
+			if err != nil {
+				report(err)
+				continue
+			}
+			fmt.Printf("Готово. VPN: %s\n", vpnText(findOp(res, api.OpVPN).Value))
+		case optUDP:
+			fmt.Println("Применяю...")
+			res, err := c.Apply(routerID, api.OpUDPProxy, !udp.Value)
+			if err != nil {
+				report(err)
+				continue
+			}
+			fmt.Printf("Готово. %s: %s\n", opTitle, onOff(findOp(res, api.OpUDPProxy).Value))
 		}
-		fmt.Printf("Готово. %s: %s\n", opTitle, onOff(res.Ops[0].Value))
 	}
+}
+
+func runCheck(c *client.Client, routerID int) {
+	fmt.Println("Проверяю...")
+	res, err := c.Check(routerID)
+	if err != nil {
+		report(err)
+		return
+	}
+	fmt.Println()
+	for _, ch := range res.Checks {
+		mark := map[string]string{"ok": "✓", "fail": "✗", "off": "—", "skip": "·"}[ch.State]
+		line := fmt.Sprintf("%-28s %s", ch.Name, mark)
+		if ch.Hint != "" {
+			line += "  " + ch.Hint
+		}
+		fmt.Println(line)
+	}
+}
+
+func findOp(s api.StateResponse, op string) api.OpState {
+	for _, o := range s.Ops {
+		if o.Op == op {
+			return o
+		}
+	}
+	return api.OpState{}
+}
+
+func vpnText(on bool) string {
+	if on {
+		return "включён"
+	}
+	return "выключен до перезагрузки роутера"
+}
+
+func confirm(message string) bool {
+	var yes bool
+	if err := survey.AskOne(&survey.Confirm{Message: message}, &yes); err != nil {
+		return false
+	}
+	return yes
 }
 
 func report(err error) {

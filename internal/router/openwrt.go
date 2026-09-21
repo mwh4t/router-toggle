@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// правило nft в rc.local и применяется его выполнением
 type OpenWrt struct{}
 
 const (
@@ -74,12 +73,39 @@ func (OpenWrt) Plan(r Runner, op Op, value bool) (*Plan, error) {
 	return plan, nil
 }
 
+const openwrtVPNOn = "nft list table ip xray 2>/dev/null | grep -q tproxy"
+
 func (OpenWrt) Restart(r Runner) error {
-	out, err := r.Run("nft flush table xray; sh " + shq(openwrtRCLocalPath))
+	// vpn выключен
+	out, err := r.Run("if " + openwrtVPNOn + "; then nft flush table xray; sh " + shq(openwrtRCLocalPath) + "; fi")
 	if err != nil {
 		return fmt.Errorf("не смог применить nft flush + rc.local: %w (%s)", err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+func (OpenWrt) VPNState(r Runner) (bool, error) {
+	return yesNo(r, openwrtVPNOn+" && echo yes || echo no")
+}
+
+func (OpenWrt) SetVPN(r Runner, on bool) error {
+	cmd := "nft flush table xray"
+	if on {
+		cmd = "nft flush table xray 2>/dev/null; sh " + shq(openwrtRCLocalPath)
+	}
+	if out, err := r.Run(cmd); err != nil {
+		return fmt.Errorf("%s: %w (%s)", cmd, err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+func (OpenWrt) ProxyRunning(r Runner) (bool, error) {
+	return yesNo(r, "pidof xray >/dev/null && echo yes || echo no")
+}
+
+func (OpenWrt) Reboot(r Runner) error {
+	_, err := r.Run("(sleep 2; reboot) >/dev/null 2>&1 &")
+	return err
 }
 
 func openwrtPorts(content string) ([]string, error) {

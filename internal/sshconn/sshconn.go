@@ -1,4 +1,3 @@
-// сервер на том же vps
 package sshconn
 
 import (
@@ -64,7 +63,6 @@ func Dial(t Target) (*Client, error) {
 		HostKeyCallback: hostKey,
 		Timeout:         dialTimeout,
 	}
-	// без этого роутер предложит ключ другого типа, чем закреплённый
 	if keyAlgo != "" {
 		cfg.HostKeyAlgorithms = []string{keyAlgo}
 	}

@@ -115,10 +115,37 @@ func (k Keenetic) Plan(r Runner, op Op, value bool) (*Plan, error) {
 }
 
 func (Keenetic) Restart(r Runner) error {
-	if out, err := r.Run("xkeen -restart"); err != nil {
+	// vpn выключен
+	out, err := r.Run("if iptables -t mangle -S 2>/dev/null | grep -q xkeen_rule; then xkeen -restart; fi")
+	if err != nil {
 		return fmt.Errorf("xkeen -restart завершился с ошибкой: %w (%s)", err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// правила перенаправления
+func (Keenetic) VPNState(r Runner) (bool, error) {
+	return yesNo(r, "iptables -t mangle -S 2>/dev/null | grep -q xkeen_rule && echo yes || echo no")
+}
+
+func (Keenetic) SetVPN(r Runner, on bool) error {
+	cmd := "xkeen -stop"
+	if on {
+		cmd = "xkeen -start"
+	}
+	if out, err := r.Run(cmd); err != nil {
+		return fmt.Errorf("%s: %w (%s)", cmd, err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+func (Keenetic) ProxyRunning(r Runner) (bool, error) {
+	return yesNo(r, "pidof xray >/dev/null && echo yes || echo no")
+}
+
+func (Keenetic) Reboot(r Runner) error {
+	_, err := r.Run("(sleep 2; ndmc -c 'system reboot' || reboot) >/dev/null 2>&1 &")
+	return err
 }
 
 func keeneticPorts(routing string) ([]string, error) {
