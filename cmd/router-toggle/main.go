@@ -1,4 +1,3 @@
-// консольный клиент
 package main
 
 import (
@@ -20,14 +19,15 @@ const defaultAPI = "https://rt.mwh4t.lol"
 
 func main() {
 	apiURL := flag.String("api", "", "адрес сервера (переопределяет сохранённый)")
-	reset := flag.Bool("reset", false, "забыть сохранённый код и выйти")
+	add := flag.Bool("add", false, "добавить ещё один код")
+	reset := flag.Bool("reset", false, "забыть все сохранённые коды и выйти")
 	flag.Parse()
 
 	if *reset {
 		if err := resetConfig(); err != nil {
 			fail(err)
 		}
-		fmt.Println("Сохранённый код удалён.")
+		fmt.Println("Сохранённые коды удалены.")
 		return
 	}
 
@@ -43,57 +43,146 @@ func main() {
 	}
 	cfg.APIURL = strings.TrimRight(cfg.APIURL, "/")
 
-	c, err := authorize(&cfg)
-	if err != nil {
+	if err := resolveEntries(&cfg); err != nil {
 		fail(err)
 	}
 
-	routers, err := c.Routers()
-	if err == nil {
-		adminLoop(c, routers)
-		return
+	if *add || len(cfg.Entries) == 0 {
+		if err := addEntry(&cfg); err != nil {
+			fail(err)
+		}
 	}
-	var apiErr *client.APIError
-	if errors.As(err, &apiErr) && (apiErr.Code == api.ErrBadCode) {
-		routerLoop(c, 0, true)
-		return
+
+	for {
+		e, ok := pickEntry(&cfg)
+		if !ok {
+			return
+		}
+		c := client.New(cfg.APIURL, e.Code)
+		if e.Admin {
+			routers, err := c.Routers()
+			if err != nil {
+				report(err)
+			} else {
+				adminLoop(c, routers)
+			}
+		} else {
+			routerLoop(c, 0, len(cfg.Entries) == 1)
+		}
+		// один код
+		if len(cfg.Entries) == 1 {
+			return
+		}
 	}
-	fail(err)
 }
 
-func authorize(cfg *Config) (*client.Client, error) {
-	for {
-		if cfg.Code == "" {
-			var input string
-			if err := ask("Введите код доступа:", &input); err != nil {
-				return nil, err
-			}
-			cfg.Code = strings.TrimSpace(input)
+func resolveEntries(cfg *Config) error {
+	changed := false
+	kept := cfg.Entries[:0]
+	for _, e := range cfg.Entries {
+		if e.Name != "" {
+			kept = append(kept, e)
+			continue
 		}
-
-		c := client.New(cfg.APIURL, cfg.Code)
-		_, err := c.Status(0)
-		if err == nil {
-			return c, saveConfig(*cfg)
-		}
-
+		resolved, err := check(cfg.APIURL, e.Code)
 		var apiErr *client.APIError
-		if errors.As(err, &apiErr) {
-			switch apiErr.Code {
-			case api.ErrBadCode:
-				// проверка списком
-				if _, rerr := c.Routers(); rerr == nil {
-					return c, saveConfig(*cfg)
-				}
-				fmt.Println(apiErr.Message)
-				cfg.Code = ""
-				continue
-			default:
-				return c, saveConfig(*cfg)
-			}
+		if errors.As(err, &apiErr) && apiErr.Code == api.ErrBadCode {
+			fmt.Println("Сохранённый код больше не действует.")
+			changed = true
+			continue
 		}
-		return nil, err
+		if err != nil {
+			// сервер недоступен
+			kept = append(kept, e)
+			continue
+		}
+		kept = append(kept, resolved)
+		changed = true
 	}
+	cfg.Entries = kept
+	if changed {
+		return saveConfig(*cfg)
+	}
+	return nil
+}
+
+func addEntry(cfg *Config) error {
+	for {
+		var input string
+		if err := ask("Введите код доступа:", &input); err != nil {
+			return err
+		}
+		code := strings.TrimSpace(input)
+		if cfg.has(code) {
+			fmt.Println("Этот код уже добавлен.")
+			return nil
+		}
+
+		e, err := check(cfg.APIURL, code)
+		if err != nil {
+			var apiErr *client.APIError
+			if errors.As(err, &apiErr) && apiErr.Code == api.ErrBadCode {
+				fmt.Println(apiErr.Message)
+				continue
+			}
+			return err
+		}
+		cfg.Entries = append(cfg.Entries, e)
+		return saveConfig(*cfg)
+	}
+}
+
+// какому роутеру принадлежит код
+func check(apiURL, code string) (Entry, error) {
+	c := client.New(apiURL, code)
+
+	state, err := c.Status(0)
+	if err == nil {
+		return Entry{Code: code, Name: state.Router.Name}, nil
+	}
+
+	var apiErr *client.APIError
+	if !errors.As(err, &apiErr) {
+		return Entry{}, err
+	}
+	if apiErr.Code == api.ErrBadCode {
+		if _, rerr := c.Routers(); rerr == nil {
+			return Entry{Code: code, Name: "Все роутеры", Admin: true}, nil
+		}
+		return Entry{}, err
+	}
+	return Entry{Code: code, Name: "Роутер"}, nil
+}
+
+// меню выбора
+func pickEntry(cfg *Config) (Entry, bool) {
+	if len(cfg.Entries) == 1 {
+		return cfg.Entries[0], true
+	}
+
+	const addOption = "Добавить роутер"
+	options := make([]string, 0, len(cfg.Entries)+2)
+	for _, e := range cfg.Entries {
+		options = append(options, e.Name)
+	}
+	options = append(options, addOption, "Выход")
+
+	var choice string
+	if err := selectOne("Роутер:", options, &choice); err != nil || choice == "Выход" {
+		return Entry{}, false
+	}
+	if choice == addOption {
+		if err := addEntry(cfg); err != nil {
+			report(err)
+		}
+		return pickEntry(cfg)
+	}
+	for i, o := range options {
+		if o == choice && i < len(cfg.Entries) {
+			return cfg.Entries[i], true
+		}
+	}
+	return Entry{}, false
 }
 
 func adminLoop(c *client.Client, routers api.RoutersResponse) {

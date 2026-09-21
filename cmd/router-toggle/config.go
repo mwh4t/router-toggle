@@ -6,9 +6,17 @@ import (
 	"path/filepath"
 )
 
+type Entry struct {
+	Code  string `json:"code"`
+	Name  string `json:"name"`
+	Admin bool   `json:"admin,omitempty"`
+}
+
 type Config struct {
-	APIURL string `json:"api_url"`
-	Code   string `json:"code"`
+	APIURL  string  `json:"api_url"`
+	Entries []Entry `json:"entries"`
+
+	Code string `json:"code,omitempty"` // старый формат
 }
 
 func configPath() (string, error) {
@@ -32,8 +40,15 @@ func loadConfig() (Config, error) {
 	if err != nil {
 		return c, err
 	}
-	err = json.Unmarshal(data, &c)
-	return c, err
+	if err := json.Unmarshal(data, &c); err != nil {
+		return c, err
+	}
+	// перенос из старого формата
+	if c.Code != "" && len(c.Entries) == 0 {
+		c.Entries = []Entry{{Code: c.Code}}
+	}
+	c.Code = ""
+	return c, nil
 }
 
 func saveConfig(c Config) error {
@@ -61,4 +76,13 @@ func resetConfig() error {
 		return nil
 	}
 	return err
+}
+
+func (c *Config) has(code string) bool {
+	for _, e := range c.Entries {
+		if e.Code == code {
+			return true
+		}
+	}
+	return false
 }
