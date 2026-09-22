@@ -29,6 +29,9 @@ class API:
     async def reboot(self, code: str, router_id: int = 0) -> None:
         await self._post(code, "/v1/reboot", {"router_id": router_id})
 
+    async def add_router(self, code: str, router: dict) -> dict:
+        return await self._post(code, "/v1/routers/add", router)
+
     async def log(self, code: str, limit: int = 20) -> list[dict]:
         data = await self._post(code, "/v1/log", {"limit": limit})
         return data.get("entries") or []

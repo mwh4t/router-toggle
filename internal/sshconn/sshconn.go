@@ -33,7 +33,8 @@ type Target struct {
 }
 
 type Client struct {
-	c *ssh.Client
+	c       *ssh.Client
+	hostKey string
 }
 
 func Dial(t Target) (*Client, error) {
@@ -44,6 +45,12 @@ func Dial(t Target) (*Client, error) {
 	hostKey, keyAlgo, err := hostKeyCallback(t)
 	if err != nil {
 		return nil, err
+	}
+
+	var seen string
+	capture := func(addr string, remote net.Addr, key ssh.PublicKey) error {
+		seen = AuthorizedKey(key)
+		return hostKey(addr, remote, key)
 	}
 
 	conn, err := net.DialTimeout("tcp", t.Addr, dialTimeout)
@@ -60,7 +67,7 @@ func Dial(t Target) (*Client, error) {
 	cfg := &ssh.ClientConfig{
 		User:            t.User,
 		Auth:            auth,
-		HostKeyCallback: hostKey,
+		HostKeyCallback: capture,
 		Timeout:         dialTimeout,
 	}
 	if keyAlgo != "" {
@@ -78,12 +85,14 @@ func Dial(t Target) (*Client, error) {
 	}
 
 	client := ssh.NewClient(sc, chans, reqs)
-	c := &Client{c: client}
+	c := &Client{c: client, hostKey: seen}
 	go c.keepalive()
 	return c, nil
 }
 
 func (c *Client) Close() error { return c.c.Close() }
+
+func (c *Client) HostKey() string { return c.hostKey }
 
 func (c *Client) Run(cmd string) (string, error) {
 	type result struct {
@@ -154,6 +163,19 @@ func handshakeError(err error) error {
 		return fmt.Errorf("%w: %v", ErrOffline, err)
 	}
 	return fmt.Errorf("%w: %v", ErrAuth, err)
+}
+
+// rsa-ключ подписывается тремя разными алгоритмами
+func hostKeyAlgos(keyType string) []string {
+	switch keyType {
+	case "":
+		return []string{ssh.KeyAlgoED25519, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512,
+			ssh.KeyAlgoECDSA256, ssh.KeyAlgoRSA}
+	case ssh.KeyAlgoRSA:
+		return []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA}
+	default:
+		return []string{keyType}
+	}
 }
 
 func hostKeyCallback(t Target) (ssh.HostKeyCallback, string, error) {

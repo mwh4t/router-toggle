@@ -25,6 +25,21 @@ type ApplyRequest struct {
 	Value    bool   `json:"value"`
 }
 
+type AddRouterRequest struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Firmware   string `json:"firmware"`
+	TunnelPort int    `json:"tunnel_port"`
+	SSHUser    string `json:"ssh_user"`
+	AuthType   string `json:"auth_type"`
+	AuthSecret string `json:"auth_secret"`
+}
+
+type AddRouterResponse struct {
+	Router     RouterInfo `json:"router"`
+	AccessCode string     `json:"access_code"`
+}
+
 type ActionRequest struct {
 	Code     string `json:"code,omitempty"`
 	RouterID int    `json:"router_id,omitempty"`
@@ -100,6 +115,8 @@ const (
 	ErrRouterBusy      = "E-14"
 	ErrRebootCooldown  = "E-15"
 	ErrServiceFailed   = "E-16"
+	ErrRouterExists    = "E-17"
+	ErrRouterRefused   = "E-18"
 	ErrInternal        = "E-20"
 )
 
@@ -114,6 +131,8 @@ var messages = map[string]string{
 	ErrRouterBusy:      "Роутер сейчас занят, попробуйте через минуту.",
 	ErrRebootCooldown:  "Роутер недавно перезагружался, подождите несколько минут.",
 	ErrServiceFailed:   "Не удалось переключить VPN. Администратор уведомлён.",
+	ErrRouterExists:    "Роутер с таким портом туннеля уже заведён.",
+	ErrRouterRefused:   "Не удалось подключиться к роутеру: проверьте порт, пользователя и пароль.",
 	ErrInternal:        "Внутренняя ошибка. Администратор уведомлён.",
 }
 

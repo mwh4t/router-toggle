@@ -95,6 +95,7 @@ func main() {
 	mux.HandleFunc("/v1/log", s.handleLog)
 	mux.HandleFunc("/v1/reboot", s.handleReboot)
 	mux.HandleFunc("/v1/check", s.handleCheck)
+	mux.HandleFunc("/v1/routers/add", s.handleAddRouter)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -193,6 +194,80 @@ func (s *server) handleLog(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) handleAddRouter(w http.ResponseWriter, r *http.Request) {
+	var req api.AddRouterRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	if !a.admin {
+		writeError(w, http.StatusForbidden, api.ErrBadCode, nil)
+		return
+	}
+
+	ctrl, err := router.For(req.Firmware)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, err)
+		return
+	}
+	if req.TunnelPort <= 0 || req.Name == "" || req.SSHUser == "" || req.AuthSecret == "" {
+		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, fmt.Errorf("не заполнены поля"))
+		return
+	}
+	if req.AuthType == "" {
+		req.AuthType = "password"
+	}
+
+	existing, err := s.st.Routers()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+		return
+	}
+	for _, rc := range existing {
+		if rc.TunnelPort == req.TunnelPort {
+			writeError(w, http.StatusConflict, api.ErrRouterExists, nil)
+			return
+		}
+	}
+
+	client, err := sshconn.Dial(sshconn.Target{
+		Addr:                "127.0.0.1:" + strconv.Itoa(req.TunnelPort),
+		User:                req.SSHUser,
+		AuthType:            req.AuthType,
+		Secret:              req.AuthSecret,
+		AllowUnknownHostKey: true,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, api.ErrRouterRefused, err)
+		return
+	}
+	defer client.Close()
+
+	if _, err := ctrl.ReadState(client, router.OpUDPProxy); err != nil {
+		writeError(w, http.StatusBadGateway, errorCode(err), err)
+		return
+	}
+
+	id, err := s.st.AddRouter(store.Router{
+		Name: req.Name, Firmware: req.Firmware, TunnelPort: req.TunnelPort,
+		SSHUser: req.SSHUser, AuthType: req.AuthType, AuthSecret: req.AuthSecret,
+		HostKey: client.HostKey(),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+		return
+	}
+	s.st.Log(id, "admin", "add_router", true, "ok", req.Name)
+
+	writeJSON(w, http.StatusOK, api.AddRouterResponse{
+		Router:     api.RouterInfo{ID: id, Name: req.Name, Firmware: req.Firmware},
+		AccessCode: auth.Format(auth.Code(s.key, req.TunnelPort)),
+	})
 }
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -398,8 +473,8 @@ func (s *server) notifyCheck(rc store.Router, who string, checks []api.Check, er
 	if len(failed) == 0 {
 		return
 	}
-	text := fmt.Sprintf("Проверка: проблемы\nРоутер: %s (%s, id=%d)\nКто: %s\n\n%s",
-		rc.Name, rc.Firmware, rc.ID, who, strings.Join(failed, "\n"))
+	text := fmt.Sprintf("🩺 Проверка · %s\nКто: %s\n\n%s",
+		rc.Name, who, strings.Join(failed, "\n"))
 	if err != nil {
 		text += fmt.Sprintf("\n\n%v", err)
 	}
@@ -422,12 +497,16 @@ func (s *server) report(rc store.Router, who string, req api.ApplyRequest, err e
 	if !req.Value {
 		action = "выключить"
 	}
-	text := fmt.Sprintf("%s\nРоутер: %s (%s, id=%d)\nОперация: %s %s\nКто: %s\n\n%v",
-		code, rc.Name, rc.Firmware, rc.ID, action, req.Op, who, err)
+	mark := "🟠"
+	if code == api.ErrRollbackFailed || code == api.ErrServiceFailed {
+		mark = "🔴"
+	}
+	text := fmt.Sprintf("%s %s · %s\n%s %s · %s\n\n%v",
+		mark, code, rc.Name, action, req.Op, who, err)
 
 	key := fmt.Sprintf("%d:%s", rc.ID, code)
 	if code == api.ErrRollbackFailed {
-		text = "ТРЕБУЕТСЯ ВМЕШАТЕЛЬСТВО\n\n" + text
+		text = "🔴 ТРЕБУЕТСЯ ВМЕШАТЕЛЬСТВО\n\n" + text
 		key = ""
 	}
 	s.tg.Send(key, text)

@@ -1,6 +1,7 @@
-OP_TITLE = "Проксирование портов Steam / FACEIT EU"
+OP_TITLE = "Игровые порты"
+OP_HINT = "Steam / FACEIT EU"
 
-MARKS = {"ok": "✓", "fail": "✗", "off": "—", "skip": "·"}
+MARKS = {"ok": "✅", "fail": "❌", "off": "⏸", "skip": "➖"}
 
 
 def find_op(state: dict, name: str) -> dict:
@@ -10,41 +11,44 @@ def find_op(state: dict, name: str) -> dict:
     return {}
 
 
+def lamp(value: bool) -> str:
+    return "🟢" if value else "⚪️"
+
+
 def on_off(value: bool) -> str:
-    return "включено" if value else "выключено"
+    return "вкл" if value else "выкл"
 
 
 def vpn_text(value: bool) -> str:
-    return "включён" if value else "выключен до перезагрузки роутера"
+    return "вкл" if value else "выкл до перезагрузки"
 
 
 def state_text(state: dict) -> str:
-    router = state["router"]
     udp, vpn = find_op(state, "udp_proxy"), find_op(state, "vpn")
-    lines = [router["name"]]
+    lines = [f"🏠 <b>{state['router']['name']}</b>", ""]
     if udp.get("stale"):
-        lines.append(f"Роутер не отвечает, последнее известное ({udp['read_at'][:16].replace('T', ' ')}):")
-    lines.append(f"{OP_TITLE}: {on_off(udp.get('value', False))}")
+        lines.append(f"⚠️ роутер не отвечает, данные от {udp['read_at'][11:16]}")
+        lines.append("")
+    lines.append(f"🎮 {OP_TITLE} · {lamp(udp.get('value', False))} {on_off(udp.get('value', False))}")
     if vpn:
-        lines.append(f"VPN: {vpn_text(vpn['value'])}")
+        lines.append(f"🛡 VPN · {lamp(vpn['value'])} {vpn_text(vpn['value'])}")
     return "\n".join(lines)
 
 
 def check_text(res: dict) -> str:
-    lines = [res["router"]["name"], ""]
+    lines = [f"🩺 <b>{res['router']['name']}</b>", ""]
     for c in res.get("checks") or []:
-        line = f"{MARKS.get(c['state'], '?')} {c['name']}"
+        line = f"{MARKS.get(c['state'], '❔')} {c['name']}"
         if c.get("hint"):
             line += f" — {c['hint']}"
         lines.append(line)
     return "\n".join(lines)
 
 
-# что спросить перед действием
 def confirm_text(kind: str, value: int) -> str:
     if kind == "rb":
-        return "Перезагрузить роутер? Интернет пропадёт на 1-2 минуты."
+        return "🔄 Перезагрузить роутер? Интернет пропадёт на 1-2 минуты."
     if kind == "vpn":
-        return "Включить VPN?" if value else "Выключить VPN до перезагрузки роутера?"
+        return "🛡 Включить VPN?" if value else "🛡 Выключить VPN до перезагрузки роутера?"
     action = "Включить" if value else "Выключить"
-    return f"{action} проксирование портов? На несколько секунд порвутся соединения."
+    return f"🎮 {action} игровые порты? На пару секунд порвутся соединения."

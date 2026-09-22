@@ -55,6 +55,13 @@ func (c *Client) Check(routerID int) (api.HealthResponse, error) {
 	return out, err
 }
 
+func (c *Client) AddRouter(req api.AddRouterRequest) (api.AddRouterResponse, error) {
+	req.Code = c.code
+	var out api.AddRouterResponse
+	err := c.post("/v1/routers/add", req, &out)
+	return out, err
+}
+
 func (c *Client) Routers() (api.RoutersResponse, error) {
 	var out api.RoutersResponse
 	err := c.post("/v1/routers", api.StatusRequest{Code: c.code}, &out)

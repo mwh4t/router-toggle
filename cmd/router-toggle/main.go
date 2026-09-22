@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"router-toggle/internal/client"
 )
 
-const opTitle = "Проксирование портов Steam / FACEIT EU"
+const opTitle = "Игровые порты (Steam / FACEIT EU)"
 
 var defaultAPI = "" // задаётся при сборке
 
@@ -73,7 +74,10 @@ func main() {
 				adminLoop(c, routers)
 			}
 		} else {
-			routerLoop(c, 0, len(cfg.Entries) == 1)
+			entry := e
+			routerLoop(c, 0, len(cfg.Entries) == 1, func(name string) {
+				rename(&cfg, entry.Code, name)
+			})
 		}
 		if len(cfg.Entries) == 1 {
 			return
@@ -191,12 +195,13 @@ func pickEntry(cfg *Config) (Entry, bool) {
 }
 
 func adminLoop(c *client.Client, routers api.RoutersResponse) {
+	const addOption = "Завести новый роутер"
 	for {
-		options := make([]string, 0, len(routers.Routers)+1)
+		options := make([]string, 0, len(routers.Routers)+2)
 		for _, r := range routers.Routers {
 			options = append(options, fmt.Sprintf("%s (%s)", r.Name, r.Firmware))
 		}
-		options = append(options, "Выход")
+		options = append(options, addOption, "Выход")
 
 		var choice string
 		if err := selectOne("Роутер:", options, &choice); err != nil {
@@ -205,15 +210,23 @@ func adminLoop(c *client.Client, routers api.RoutersResponse) {
 		if choice == "Выход" {
 			return
 		}
+		if choice == addOption {
+			if updated, err := addRouter(c); err != nil {
+				report(err)
+			} else {
+				routers = updated
+			}
+			continue
+		}
 		for i, o := range options {
 			if o == choice && i < len(routers.Routers) {
-				routerLoop(c, routers.Routers[i].ID, false)
+				routerLoop(c, routers.Routers[i].ID, false, nil)
 			}
 		}
 	}
 }
 
-func routerLoop(c *client.Client, routerID int, showName bool) {
+func routerLoop(c *client.Client, routerID int, showName bool, onName func(string)) {
 	for {
 		state, err := c.Status(routerID)
 		if err != nil {
@@ -223,31 +236,34 @@ func routerLoop(c *client.Client, routerID int, showName bool) {
 			}
 			continue
 		}
+		if onName != nil {
+			onName(state.Router.Name)
+		}
 
 		udp, vpn := findOp(state, api.OpUDPProxy), findOp(state, api.OpVPN)
 		fmt.Println()
 		if showName {
-			fmt.Printf("Роутер: %s\n", state.Router.Name)
+			fmt.Printf("%s\n", state.Router.Name)
 		}
 		if udp.Stale {
-			fmt.Printf("Роутер не отвечает. Последнее известное состояние (%s):\n", ago(udp.ReadAt))
+			fmt.Printf("  роутер не отвечает, данные %s\n", ago(udp.ReadAt))
 		}
-		fmt.Printf("%s: %s\n", opTitle, onOff(udp.Value))
+		fmt.Printf("  %s %s — %s\n", dot(udp.Value), opTitle, onOff(udp.Value))
 		if vpn.Op != "" {
-			fmt.Printf("VPN: %s\n", vpnText(vpn.Value))
+			fmt.Printf("  %s VPN — %s\n", dot(vpn.Value), vpnText(vpn.Value))
 		}
 
 		const (
-			optCheck  = "Проверить, всё ли в порядке"
+			optCheck  = "Проверка"
 			optReboot = "Перезагрузить роутер"
 			optReload = "Обновить"
 			optExit   = "Выход"
 		)
-		optUDP := "Включить проксирование портов"
+		optUDP := "Включить игровые порты"
 		if udp.Value {
-			optUDP = "Выключить проксирование портов"
+			optUDP = "Выключить игровые порты"
 		}
-		optVPN := "Выключить VPN до перезагрузки роутера"
+		optVPN := "Выключить VPN до перезагрузки"
 		if !vpn.Value {
 			optVPN = "Включить VPN"
 		}
@@ -273,7 +289,7 @@ func routerLoop(c *client.Client, routerID int, showName bool) {
 				if err := c.Reboot(routerID); err != nil {
 					report(err)
 				} else {
-					fmt.Println("Роутер перезагружается. Проверьте состояние через пару минут.")
+					fmt.Println("Роутер перезагружается, проверьте через пару минут.")
 				}
 			}
 		case optVPN:
@@ -283,7 +299,7 @@ func routerLoop(c *client.Client, routerID int, showName bool) {
 				report(err)
 				continue
 			}
-			fmt.Printf("Готово. VPN: %s\n", vpnText(findOp(res, api.OpVPN).Value))
+			fmt.Printf("Готово, VPN %s\n", vpnText(findOp(res, api.OpVPN).Value))
 		case optUDP:
 			fmt.Println("Применяю...")
 			res, err := c.Apply(routerID, api.OpUDPProxy, !udp.Value)
@@ -291,9 +307,16 @@ func routerLoop(c *client.Client, routerID int, showName bool) {
 				report(err)
 				continue
 			}
-			fmt.Printf("Готово. %s: %s\n", opTitle, onOff(findOp(res, api.OpUDPProxy).Value))
+			fmt.Printf("Готово, игровые порты %s\n", onOff(findOp(res, api.OpUDPProxy).Value))
 		}
 	}
+}
+
+func dot(on bool) string {
+	if on {
+		return "●"
+	}
+	return "○"
 }
 
 func runCheck(c *client.Client, routerID int) {
@@ -303,12 +326,12 @@ func runCheck(c *client.Client, routerID int) {
 		report(err)
 		return
 	}
+	marks := map[string]string{"ok": "✓", "fail": "✗", "off": "—", "skip": "·"}
 	fmt.Println()
 	for _, ch := range res.Checks {
-		mark := map[string]string{"ok": "✓", "fail": "✗", "off": "—", "skip": "·"}[ch.State]
-		line := fmt.Sprintf("%-28s %s", ch.Name, mark)
+		line := fmt.Sprintf("  %s %s", marks[ch.State], ch.Name)
 		if ch.Hint != "" {
-			line += "  " + ch.Hint
+			line += " — " + ch.Hint
 		}
 		fmt.Println(line)
 	}
@@ -327,7 +350,7 @@ func vpnText(on bool) string {
 	if on {
 		return "включён"
 	}
-	return "выключен до перезагрузки роутера"
+	return "выключен до перезагрузки"
 }
 
 func confirm(message string) bool {
@@ -336,6 +359,56 @@ func confirm(message string) bool {
 		return false
 	}
 	return yes
+}
+
+// заводит роутер и печатает код для клиента
+func addRouter(c *client.Client) (api.RoutersResponse, error) {
+	var req api.AddRouterRequest
+	var port, user string
+
+	if err := ask("Название роутера:", &req.Name); err != nil {
+		return api.RoutersResponse{}, err
+	}
+	if err := selectOne("Прошивка:", []string{"keenetic", "openwrt"}, &req.Firmware); err != nil {
+		return api.RoutersResponse{}, err
+	}
+	if err := ask("Порт туннеля на VPS:", &port); err != nil {
+		return api.RoutersResponse{}, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(port))
+	if err != nil {
+		return api.RoutersResponse{}, fmt.Errorf("порт должен быть числом")
+	}
+	req.TunnelPort = n
+
+	if err := survey.AskOne(&survey.Input{Message: "Пользователь SSH:", Default: "root"}, &user); err != nil {
+		return api.RoutersResponse{}, err
+	}
+	req.SSHUser = strings.TrimSpace(user)
+	req.AuthType = "password"
+	if err := survey.AskOne(&survey.Password{Message: "Пароль:"}, &req.AuthSecret); err != nil {
+		return api.RoutersResponse{}, err
+	}
+
+	fmt.Println("Подключаюсь...")
+	res, err := c.AddRouter(req)
+	if err != nil {
+		return api.RoutersResponse{}, err
+	}
+	fmt.Printf("\nГотово: %s (%s), id=%d\n", res.Router.Name, res.Router.Firmware, res.Router.ID)
+	fmt.Printf("Код доступа для клиента: %s\n\n", res.AccessCode)
+
+	return c.Routers()
+}
+
+func rename(cfg *Config, code, name string) {
+	for i := range cfg.Entries {
+		if cfg.Entries[i].Code == code && cfg.Entries[i].Name != name {
+			cfg.Entries[i].Name = name
+			_ = saveConfig(*cfg)
+			return
+		}
+	}
 }
 
 func report(err error) {
