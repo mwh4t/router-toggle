@@ -9,38 +9,43 @@ class APIError(Exception):
 
 
 class API:
-    def __init__(self, base_url: str, code: str):
+    def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
-        self.code = code
         self.timeout = aiohttp.ClientTimeout(total=180)
 
-    async def routers(self) -> list[dict]:
-        data = await self._post("/v1/routers", {})
+    async def routers(self, code: str) -> list[dict]:
+        data = await self._post(code, "/v1/routers", {})
         return data.get("routers") or []
 
-    async def status(self, router_id: int) -> dict:
-        return await self._post("/v1/status", {"router_id": router_id})
+    async def status(self, code: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/status", {"router_id": router_id})
 
-    async def apply(self, router_id: int, value: bool) -> dict:
-        return await self._post(
-            "/v1/apply",
-            {"router_id": router_id, "op": "udp_proxy", "value": value},
-        )
+    async def apply(self, code: str, op: str, value: bool, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/apply", {"router_id": router_id, "op": op, "value": value})
 
-    async def log(self, limit: int = 20) -> list[dict]:
-        data = await self._post("/v1/log", {"limit": limit})
+    async def check(self, code: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/check", {"router_id": router_id})
+
+    async def reboot(self, code: str, router_id: int = 0) -> None:
+        await self._post(code, "/v1/reboot", {"router_id": router_id})
+
+    async def log(self, code: str, limit: int = 20) -> list[dict]:
+        data = await self._post(code, "/v1/log", {"limit": limit})
         return data.get("entries") or []
 
-    async def _post(self, path: str, payload: dict) -> dict:
-        body = {"code": self.code, **payload}
+    async def _post(self, code: str, path: str, payload: dict) -> dict:
+        body = {"code": code, **payload}
         headers = {"X-Client-Version": "1"}
 
         async with aiohttp.ClientSession(timeout=self.timeout) as session:
             async with session.post(self.base_url + path, json=body, headers=headers) as resp:
-                data = await resp.json(content_type=None)
+                try:
+                    data = await resp.json(content_type=None)
+                except ValueError:
+                    data = None
                 if resp.status != 200:
-                    raise APIError(
-                        data.get("code", "E-20"),
-                        data.get("message", "Внутренняя ошибка"),
-                    )
-                return data
+                    # сервер не понял запрос
+                    if not isinstance(data, dict) or "code" not in data:
+                        raise APIError("E-20", "Сервер ответил неожиданно")
+                    raise APIError(data["code"], data.get("message", ""))
+                return data or {}
