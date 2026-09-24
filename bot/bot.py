@@ -155,7 +155,11 @@ async def cb_check(call: CallbackQuery):
         text = check_text(await api.check(ADMIN_CODE, rid))
     except APIError as e:
         text = f"⚠️ {e.message}"
-    await edit(call.message, text, router_keyboard(rid, None))
+    try:
+        state = await api.status(ADMIN_CODE, rid)
+    except APIError:
+        state = None
+    await edit(call.message, text, router_keyboard(rid, state))
 
 
 @dp.callback_query(F.data.startswith("ask:"))
