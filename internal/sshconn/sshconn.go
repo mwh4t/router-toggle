@@ -132,6 +132,37 @@ func (c *Client) keepalive() {
 	}
 }
 
+// ключ роутера до аутентификации
+func ScanHostKey(addr string) (line, fingerprint string, err error) {
+	conn, err := net.DialTimeout("tcp", addr, dialTimeout)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: %v", ErrOffline, err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		return "", "", err
+	}
+
+	cfg := &ssh.ClientConfig{
+		User: "probe",
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			line, fingerprint = AuthorizedKey(key), ssh.FingerprintSHA256(key)
+			return nil
+		},
+		HostKeyAlgorithms: hostKeyAlgos(""),
+		Timeout:           dialTimeout,
+	}
+
+	if sc, chans, reqs, cerr := ssh.NewClientConn(conn, addr, cfg); cerr == nil {
+		ssh.NewClient(sc, chans, reqs).Close()
+	}
+	if line == "" {
+		return "", "", fmt.Errorf("%w: роутер не показал ключ", ErrOffline)
+	}
+	return line, fingerprint, nil
+}
+
 func authMethod(t Target) ([]ssh.AuthMethod, error) {
 	switch t.AuthType {
 	case "password":

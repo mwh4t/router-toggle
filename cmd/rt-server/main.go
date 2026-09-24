@@ -435,7 +435,7 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 func healthChecks(h router.Health) []api.Check {
 	checks := []api.Check{{Name: "Роутер на связи", State: "ok"}}
 
-	internet := api.Check{Name: "Интернет у роутера", State: "ok"}
+	internet := api.Check{Name: "Интернет", State: "ok"}
 	if !h.Internet {
 		internet.State, internet.Hint = "fail", "проблема у провайдера"
 	}
@@ -450,7 +450,7 @@ func healthChecks(h router.Health) []api.Check {
 	}
 	checks = append(checks, proxy)
 
-	vps := api.Check{Name: "Соединение с VPN-сервером", State: "ok"}
+	vps := api.Check{Name: "Связь с VPN", State: "ok"}
 	switch {
 	case !h.VPSKnown:
 		vps.State = "skip"

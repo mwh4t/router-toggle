@@ -54,9 +54,14 @@ func main() {
 		fail(err)
 	}
 
-	if *add || len(cfg.Entries) == 0 {
+	if *add {
 		if err := addEntry(&cfg); err != nil {
 			fail(err)
+		}
+	}
+	if len(cfg.Entries) == 0 {
+		if !firstRun(&cfg) {
+			return
 		}
 	}
 
@@ -115,6 +120,29 @@ func resolveEntries(cfg *Config) error {
 	return nil
 }
 
+// первый запуск
+func firstRun(cfg *Config) bool {
+	const withCode = "У меня есть код доступа"
+	const manual = "Ввести данные своего роутера"
+
+	var choice string
+	if err := selectOne("", []string{withCode, manual, "Выход"}, &choice); err != nil {
+		return false
+	}
+	switch choice {
+	case withCode:
+		if err := addEntry(cfg); err != nil {
+			report(err)
+			return false
+		}
+		return true
+	case manual:
+		manualMode()
+		return false
+	}
+	return false
+}
+
 func addEntry(cfg *Config) error {
 	for {
 		var input string
@@ -170,11 +198,12 @@ func pickEntry(cfg *Config) (Entry, bool) {
 	}
 
 	const addOption = "Добавить роутер"
-	options := make([]string, 0, len(cfg.Entries)+2)
+	const manualOption = "Ввести данные роутера вручную"
+	options := make([]string, 0, len(cfg.Entries)+3)
 	for _, e := range cfg.Entries {
 		options = append(options, e.Name)
 	}
-	options = append(options, addOption, "Выход")
+	options = append(options, addOption, manualOption, "Выход")
 
 	var choice string
 	if err := selectOne("Роутер:", options, &choice); err != nil || choice == "Выход" {
@@ -185,6 +214,10 @@ func pickEntry(cfg *Config) (Entry, bool) {
 			report(err)
 		}
 		return pickEntry(cfg)
+	}
+	if choice == manualOption {
+		manualMode()
+		return Entry{}, false
 	}
 	for i, o := range options {
 		if o == choice && i < len(cfg.Entries) {
