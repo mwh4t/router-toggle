@@ -51,7 +51,35 @@ def button(text: str, data: str) -> list[InlineKeyboardButton]:
     return [InlineKeyboardButton(text=text, callback_data=data)]
 
 
+# одна живая панель на чат
+panels: dict[int, int] = {}
+
+
+async def forget_panel(message: Message, keep: int | None = None) -> None:
+    old = panels.get(message.chat.id)
+    if old and old != keep:
+        try:
+            await message.bot.delete_message(message.chat.id, old)
+        except Exception:
+            pass
+
+
+async def show(message: Message, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+    await forget_panel(message)
+    sent = await message.bot.send_message(message.chat.id, text, reply_markup=reply_markup)
+    panels[message.chat.id] = sent.message_id
+
+
+async def drop(message: Message) -> None:
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 async def edit(message: Message, text: str, markup: InlineKeyboardMarkup | None = None) -> None:
+    await forget_panel(message, keep=message.message_id)
+    panels[message.chat.id] = message.message_id
     try:
         await message.edit_text(text, reply_markup=markup)
     except TelegramBadRequest as e:
@@ -78,7 +106,7 @@ def router_keyboard(rid: int, state: dict | None) -> InlineKeyboardMarkup:
                                f"ask:vpn:{rid}:{int(not vpn['value'])}"))
     rows.append(button("🌐 Сайты через VPN", f"dom:{rid}"))
     rows.append([
-        InlineKeyboardButton(text="✏️ Имя для клиента", callback_data=f"ren:{rid}"),
+        InlineKeyboardButton(text="✏️ Имя", callback_data=f"ren:{rid}"),
         InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"lnk:{rid}"),
     ])
     rows.append([
@@ -112,24 +140,26 @@ async def show_router(call: CallbackQuery, rid: int, note: str = "") -> None:
 async def cmd_start(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     await state.clear()
     try:
-        await message.answer("Роутеры:", reply_markup=await routers_keyboard())
+        await show(message, "Роутеры:", reply_markup=await routers_keyboard())
     except APIError as e:
-        await message.answer(f"⚠️ {e.message}")
+        await show(message, f"⚠️ {e.message}")
 
 
 @dp.message(Command("log"))
 async def cmd_log(message: Message):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     try:
         entries = await api.log(ADMIN_CODE, 15)
     except APIError as e:
-        await message.answer(f"⚠️ {e.message}")
+        await show(message, f"⚠️ {e.message}")
         return
     if not entries:
-        await message.answer("Журнал пуст.")
+        await show(message, "Журнал пуст.")
         return
 
     lines = []
@@ -139,7 +169,8 @@ async def cmd_log(message: Message):
             f"{mark} {e['ts'][11:16]} · id={e['router_id']} · {e['actor']} · "
             f"{e['op']}={'вкл' if e['value'] else 'выкл'}"
         )
-    await message.answer("\n".join(lines))
+    await show(message, "\n".join(lines),
+               reply_markup=InlineKeyboardMarkup(inline_keyboard=[button("← Роутеры", "list")]))
 
 
 @dp.callback_query(F.data == "list")
@@ -293,11 +324,12 @@ async def cb_domain_add(call: CallbackQuery, state: FSMContext):
 async def on_domain_query(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     rid = (await state.get_data())["rid"]
     try:
         res = await api.search_domains(ADMIN_CODE, message.text.strip(), rid)
     except APIError as e:
-        await message.answer(f"⚠️ {e.message}")
+        await show(message, f"⚠️ {e.message}")
         return
 
     options, rows = [], []
@@ -308,13 +340,13 @@ async def on_domain_query(message: Message, state: FSMContext):
         rows.append(button(f"🔗 Только сайт {res['domain']}", f"dpick:{rid}:{len(options)}"))
         options.append({"kind": "domain", "name": res["domain"]})
     if not options:
-        await message.answer("🤷 Ничего не нашёл. Попробуйте другое название или адрес сайта, например example.com")
+        await show(message, "🤷 Ничего не нашёл. Попробуйте другое название или адрес сайта, например example.com")
         return
 
     await state.set_state(None)
     await state.update_data(options=options)
     rows.append(button("✖️ Отмена", f"dom:{rid}"))
-    await message.answer("Что добавить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await show(message, "Что добавить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @dp.callback_query(F.data.startswith("dpick:"))
@@ -344,15 +376,16 @@ async def cb_link(call: CallbackQuery):
         return
     await call.answer()
     rid = int(call.data.split(":")[1])
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Назад", f"rt:{rid}")])
     try:
         code = await api.router_code(ADMIN_CODE, rid)
     except APIError as e:
-        await call.message.answer(f"⚠️ {e.message}")
+        await edit(call.message, f"⚠️ {e.message}", back)
         return
     text = f"🔑 Код: <code>{code}</code>"
     if PUBLIC_BOT:
         text += f"\n🔗 https://t.me/{PUBLIC_BOT}?start={code}"
-    await call.message.answer(text, disable_web_page_preview=True)
+    await edit(call.message, text, back)
 
 
 @dp.callback_query(F.data.startswith("ren:"))
@@ -371,20 +404,21 @@ async def cb_rename(call: CallbackQuery, state: FSMContext):
 async def on_rename(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     rid = (await state.get_data())["rid"]
     await state.clear()
     name = message.text.strip()
     try:
         await api.rename_router(ADMIN_CODE, rid, "" if name == "-" else name)
     except APIError as e:
-        await message.answer(f"⚠️ {e.message}")
+        await show(message, f"⚠️ {e.message}")
         return
     try:
         st = await api.status(ADMIN_CODE, rid)
     except APIError:
-        await message.answer("✅ Готово", reply_markup=router_keyboard(rid, None))
+        await show(message, "✅ Готово", reply_markup=router_keyboard(rid, None))
         return
-    await message.answer("✅ Готово\n\n" + state_text(st), reply_markup=router_keyboard(rid, st))
+    await show(message, "✅ Готово\n\n" + state_text(st), reply_markup=router_keyboard(rid, st))
 
 
 @dp.callback_query(F.data == "add")
@@ -400,19 +434,21 @@ async def cb_add(call: CallbackQuery, state: FSMContext):
 async def add_name(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     await state.update_data(name=message.text.strip())
     await state.set_state(NewRouter.display)
-    await message.answer("Название для клиента (Дом, Дача…)? Отправьте «-», чтобы пропустить.")
+    await show(message, "Название для клиента (Дом, Дача…)? Отправьте «-», чтобы пропустить.")
 
 
 @dp.message(StateFilter(NewRouter.display), F.text)
 async def add_display(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     display = message.text.strip()
     await state.update_data(display="" if display == "-" else display)
     await state.set_state(NewRouter.firmware)
-    await message.answer("Прошивка?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+    await show(message, "Прошивка?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="keenetic", callback_data="fw:keenetic"),
         InlineKeyboardButton(text="openwrt", callback_data="fw:openwrt"),
     ]]))
@@ -432,22 +468,24 @@ async def add_firmware(call: CallbackQuery, state: FSMContext):
 async def add_port(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     if not message.text.strip().isdigit():
-        await message.answer("Нужно число, например 22010.")
+        await show(message, "Нужно число, например 22010.")
         return
     await state.update_data(port=int(message.text.strip()))
     await state.set_state(NewRouter.user)
-    await message.answer("Пользователь SSH? Отправьте «-» для root.")
+    await show(message, "Пользователь SSH? Отправьте «-» для root.")
 
 
 @dp.message(StateFilter(NewRouter.user), F.text)
 async def add_user(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
+    await drop(message)
     user = message.text.strip()
     await state.update_data(user="root" if user == "-" else user)
     await state.set_state(NewRouter.password)
-    await message.answer("Пароль? Сообщение удалю сразу.")
+    await show(message, "Пароль? Сообщение удалю сразу.")
 
 
 @dp.message(StateFilter(NewRouter.password), F.text)
@@ -463,7 +501,7 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
 
     data = await state.get_data()
     await state.clear()
-    await message.answer("Подключаюсь…")
+    await show(message, "Подключаюсь…")
 
     try:
         res = await api.add_router(ADMIN_CODE, {
@@ -476,10 +514,10 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
             "auth_secret": password,
         })
     except APIError as e:
-        await message.answer(f"⚠️ {e.message}", reply_markup=await routers_keyboard())
+        await show(message, f"⚠️ {e.message}", reply_markup=await routers_keyboard())
         return
 
-    await message.answer(
+    await show(message, 
         f"✅ <b>{res['router']['name']}</b> заведён\n\n"
         f"Код доступа: <code>{res['access_code']}</code>",
         reply_markup=await routers_keyboard(),
@@ -488,7 +526,7 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+    bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode="HTML", link_preview_is_disabled=True))
     await dp.start_polling(bot)
 
 
