@@ -15,7 +15,8 @@ type Config struct {
 	DBPath    string `json:"db_path"`
 	ServerKey string `json:"server_key"` // hex
 	AdminCode string `json:"admin_code"`
-	PublicIP  string `json:"public_ip"` // проверка соединения с vps
+	PublicIP    string `json:"public_ip"` // проверка соединения с vps
+	GeositePath string `json:"geosite_path"`
 
 	TelegramToken  string `json:"telegram_token"`
 	TelegramChatID string `json:"telegram_chat_id"`
@@ -32,6 +33,9 @@ func LoadConfig(path string) (*Config, []byte, error) {
 	}
 	if c.Listen == "" {
 		c.Listen = "127.0.0.1:8080"
+	}
+	if c.GeositePath == "" {
+		c.GeositePath = "/etc/router-toggle/dlc.dat"
 	}
 	if c.DBPath == "" {
 		c.DBPath = "/etc/router-toggle/router-toggle.db"

@@ -15,6 +15,7 @@ import (
 
 	"router-toggle/internal/api"
 	"router-toggle/internal/auth"
+	"router-toggle/internal/geosite"
 	"router-toggle/internal/notify"
 	"router-toggle/internal/router"
 	"router-toggle/internal/sshconn"
@@ -29,6 +30,7 @@ type server struct {
 	limiter *auth.Limiter
 	tg      *notify.Telegram
 	reboots *cooldown
+	geo     *geosite.Index
 }
 
 type actor struct {
@@ -83,7 +85,10 @@ func main() {
 		limiter: auth.NewLimiter(),
 		tg:      notify.New(cfg.TelegramToken, cfg.TelegramChatID),
 		reboots: newCooldown(10 * time.Minute),
+		geo:     geosite.NewIndex(),
 	}
+	s.loadGeosite()
+	go s.refreshLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +101,10 @@ func main() {
 	mux.HandleFunc("/v1/reboot", s.handleReboot)
 	mux.HandleFunc("/v1/check", s.handleCheck)
 	mux.HandleFunc("/v1/routers/add", s.handleAddRouter)
+	mux.HandleFunc("/v1/domains", s.handleDomains)
+	mux.HandleFunc("/v1/domains/search", s.handleDomainSearch)
+	mux.HandleFunc("/v1/domains/add", s.handleDomainAdd)
+	mux.HandleFunc("/v1/domains/remove", s.handleDomainRemove)
 
 	routers, err := st.Routers()
 	if err != nil {

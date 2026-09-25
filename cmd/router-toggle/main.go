@@ -287,10 +287,11 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 		}
 
 		const (
-			optCheck  = "Проверка"
-			optReboot = "Перезагрузить роутер"
-			optReload = "Обновить"
-			optExit   = "Выход"
+			optDomains = "Сайты через VPN"
+			optCheck   = "Проверка"
+			optReboot  = "Перезагрузить роутер"
+			optReload  = "Обновить"
+			optExit    = "Выход"
 		)
 		optUDP := "Включить игровые порты"
 		if udp.Value {
@@ -305,7 +306,7 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 		if vpn.Op != "" {
 			options = append(options, optVPN)
 		}
-		options = append(options, optCheck, optReboot, optReload, optExit)
+		options = append(options, optDomains, optCheck, optReboot, optReload, optExit)
 
 		var choice string
 		if err := selectOne("", options, &choice); err != nil || choice == optExit {
@@ -315,6 +316,8 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 		switch choice {
 		case optReload:
 			continue
+		case optDomains:
+			domainsLoop(c, routerID)
 		case optCheck:
 			runCheck(c, routerID)
 		case optReboot:
@@ -350,6 +353,99 @@ func dot(on bool) string {
 		return "●"
 	}
 	return "○"
+}
+
+func domainsLoop(c *client.Client, routerID int) {
+	const (
+		optAdd  = "Добавить сайт или сервис"
+		optBack = "Назад"
+	)
+	for {
+		res, err := c.Domains(routerID)
+		if err != nil {
+			report(err)
+			return
+		}
+
+		fmt.Println()
+		if len(res.Entries) == 0 {
+			fmt.Println("  Своих сайтов пока нет")
+		}
+		options := []string{optAdd}
+		for _, e := range res.Entries {
+			fmt.Printf("  • %s\n", entryTitle(e))
+			options = append(options, "Удалить "+e.Name)
+		}
+		options = append(options, optBack)
+
+		var choice string
+		if err := selectOne("", options, &choice); err != nil || choice == optBack {
+			return
+		}
+		if choice == optAdd {
+			addDomain(c, routerID)
+			continue
+		}
+		for _, e := range res.Entries {
+			if choice == "Удалить "+e.Name && confirm("Убрать "+e.Name+" из VPN?") {
+				fmt.Println("Применяю...")
+				if _, err := c.RemoveDomain(routerID, e.Kind, e.Name); err != nil {
+					report(err)
+				}
+			}
+		}
+	}
+}
+
+func entryTitle(e api.DomainEntry) string {
+	if e.Kind == "category" {
+		return e.Name + " (сервис)"
+	}
+	return e.Name
+}
+
+// сервис из v2fly, иначе один домен
+func addDomain(c *client.Client, routerID int) {
+	var query string
+	if err := ask("Название сервиса или адрес сайта:", &query); err != nil {
+		return
+	}
+	res, err := c.SearchDomains(routerID, query)
+	if err != nil {
+		report(err)
+		return
+	}
+
+	type option struct{ kind, name string }
+	var labels []string
+	picks := map[string]option{}
+	for _, m := range res.Matches {
+		label := fmt.Sprintf("%s — сервис, доменов: %d", m.Name, m.Size)
+		labels = append(labels, label)
+		picks[label] = option{"category", m.Name}
+	}
+	if res.Domain != "" {
+		label := "Только сайт " + res.Domain
+		labels = append(labels, label)
+		picks[label] = option{"domain", res.Domain}
+	}
+	if len(labels) == 0 {
+		fmt.Println("Ничего не нашёл. Проверьте название или введите адрес сайта, например example.com")
+		return
+	}
+	labels = append(labels, "Отмена")
+
+	var choice string
+	if err := selectOne("Что добавить?", labels, &choice); err != nil || choice == "Отмена" {
+		return
+	}
+	p := picks[choice]
+	fmt.Println("Применяю...")
+	if _, err := c.AddDomain(routerID, p.kind, p.name); err != nil {
+		report(err)
+		return
+	}
+	fmt.Printf("Готово, %s идёт через VPN\n", p.name)
 }
 
 func runCheck(c *client.Client, routerID int) {

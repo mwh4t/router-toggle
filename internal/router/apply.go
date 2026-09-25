@@ -20,6 +20,23 @@ func Apply(r Runner, c Controller, op Op, value bool) (bool, error) {
 		return c.ReadState(r, op)
 	}
 
+	var state bool
+	verify := func() error {
+		var err error
+		if state, err = c.ReadState(r, op); err != nil {
+			return err
+		}
+		if state != value {
+			return fmt.Errorf("после применения состояние %v, ожидалось %v", state, value)
+		}
+		return nil
+	}
+	err = applyPlan(r, plan, c.Restart, verify)
+	return state, err
+}
+
+// запись, замена, перезапуск и проверка с откатом
+func applyPlan(r Runner, plan *Plan, restart func(Runner) error, verify func() error) error {
 	written := make([]FileChange, 0, len(plan.Changes))
 	cleanup := func() {
 		for _, ch := range written {
@@ -31,12 +48,12 @@ func Apply(r Runner, c Controller, op Op, value bool) (bool, error) {
 		if ch.Validate != nil {
 			if err := ch.Validate(ch.Content); err != nil {
 				cleanup()
-				return false, fmt.Errorf("%w: %s: %v", ErrUnknownFormat, ch.Path, err)
+				return fmt.Errorf("%w: %s: %v", ErrUnknownFormat, ch.Path, err)
 			}
 		}
 		if err := writeFile(r, ch.Path+tmpSuffix, ch.Content); err != nil {
 			cleanup()
-			return false, err
+			return err
 		}
 		written = append(written, ch)
 
@@ -44,7 +61,7 @@ func Apply(r Runner, c Controller, op Op, value bool) (bool, error) {
 			cmd := fmt.Sprintf(ch.RemoteCheck, shq(ch.Path+tmpSuffix))
 			if out, err := r.Run(cmd); err != nil {
 				cleanup()
-				return false, fmt.Errorf("%w: %s не прошёл проверку: %v (%s)",
+				return fmt.Errorf("%w: %s не прошёл проверку: %v (%s)",
 					ErrUnknownFormat, ch.Path, err, out)
 			}
 		}
@@ -53,37 +70,31 @@ func Apply(r Runner, c Controller, op Op, value bool) (bool, error) {
 	replaced := make([]FileChange, 0, len(plan.Changes))
 	for _, ch := range plan.Changes {
 		if err := replaceFile(r, ch.Path); err != nil {
-			rbErr := rollback(r, c, replaced)
+			rbErr := rollback(r, restart, replaced)
 			cleanup()
 			if rbErr != nil {
-				return false, fmt.Errorf("%w: %v (причина: %v)", ErrRollbackFailed, rbErr, err)
+				return fmt.Errorf("%w: %v (причина: %v)", ErrRollbackFailed, rbErr, err)
 			}
-			return false, fmt.Errorf("%w: %v", ErrRolledBack, err)
+			return fmt.Errorf("%w: %v", ErrRolledBack, err)
 		}
 		replaced = append(replaced, ch)
 	}
 
-	cause := c.Restart(r)
-	var state bool
+	cause := restart(r)
 	if cause == nil {
-		state, cause = c.ReadState(r, op)
-		if cause == nil && state != value {
-			cause = fmt.Errorf("после применения состояние %v, ожидалось %v", state, value)
-		}
+		cause = verify()
 	}
-
 	if cause != nil {
-		if rbErr := rollback(r, c, replaced); rbErr != nil {
-			return state, fmt.Errorf("%w: %v (причина: %v)", ErrRollbackFailed, rbErr, cause)
+		if rbErr := rollback(r, restart, replaced); rbErr != nil {
+			return fmt.Errorf("%w: %v (причина: %v)", ErrRollbackFailed, rbErr, cause)
 		}
-		return state, fmt.Errorf("%w: %v", ErrRolledBack, cause)
+		return fmt.Errorf("%w: %v", ErrRolledBack, cause)
 	}
-
-	return state, nil
+	return nil
 }
 
 // ошибка e-13
-func rollback(r Runner, c Controller, replaced []FileChange) error {
+func rollback(r Runner, restart func(Runner) error, replaced []FileChange) error {
 	if len(replaced) == 0 {
 		return nil
 	}
@@ -93,7 +104,7 @@ func rollback(r Runner, c Controller, replaced []FileChange) error {
 			errs = append(errs, err)
 		}
 	}
-	if err := c.Restart(r); err != nil {
+	if err := restart(r); err != nil {
 		errs = append(errs, fmt.Errorf("перезапуск службы после отката: %w", err))
 	}
 	return errors.Join(errs...)

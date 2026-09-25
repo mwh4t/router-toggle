@@ -1,10 +1,11 @@
 module router-toggle
 
-go 1.22
+go 1.23
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	golang.org/x/crypto v0.24.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.30.1
 )
 

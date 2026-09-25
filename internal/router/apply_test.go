@@ -86,6 +86,10 @@ func (f *fakeRunner) Run(cmd string) (string, error) {
 		}
 		return "", nil
 
+	case strings.Contains(cmd, "pidof dnsmasq"):
+		return "yes\n", nil
+	case strings.Contains(cmd, "dnsmasq restart"):
+		return "", nil
 	case strings.Contains(cmd, "xkeen -restart"),
 		strings.Contains(cmd, "nft flush table xray"),
 		strings.HasPrefix(cmd, "sh -n "):
@@ -184,7 +188,6 @@ func TestApplyIdempotent(t *testing.T) {
 
 func TestApplyRollbackOnRestartFailure(t *testing.T) {
 	r := newFakeRunner(keeneticFiles(false))
-	// рестарт упал из-за нового конфига, после отката служба поднялась
 	r.failOnce["xkeen -restart"] = errors.New("exit status 1")
 
 	origLst := r.files[keeneticPortListPath]

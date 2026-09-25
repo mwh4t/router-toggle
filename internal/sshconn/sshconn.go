@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -95,6 +97,14 @@ func (c *Client) Close() error { return c.c.Close() }
 func (c *Client) HostKey() string { return c.hostKey }
 
 func (c *Client) Run(cmd string) (string, error) {
+	return c.run(cmd, nil)
+}
+
+func (c *Client) RunInput(cmd, input string) (string, error) {
+	return c.run(cmd, strings.NewReader(input))
+}
+
+func (c *Client) run(cmd string, stdin io.Reader) (string, error) {
 	type result struct {
 		out string
 		err error
@@ -108,6 +118,7 @@ func (c *Client) Run(cmd string) (string, error) {
 			return
 		}
 		defer session.Close()
+		session.Stdin = stdin
 		out, err := session.CombinedOutput(cmd)
 		done <- result{string(out), err}
 	}()

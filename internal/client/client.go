@@ -62,6 +62,30 @@ func (c *Client) AddRouter(req api.AddRouterRequest) (api.AddRouterResponse, err
 	return out, err
 }
 
+func (c *Client) Domains(routerID int) (api.DomainsResponse, error) {
+	var out api.DomainsResponse
+	err := c.post("/v1/domains", api.ActionRequest{Code: c.code, RouterID: routerID}, &out)
+	return out, err
+}
+
+func (c *Client) SearchDomains(routerID int, query string) (api.DomainSearchResponse, error) {
+	var out api.DomainSearchResponse
+	err := c.post("/v1/domains/search", api.DomainSearchRequest{Code: c.code, RouterID: routerID, Query: query}, &out)
+	return out, err
+}
+
+func (c *Client) AddDomain(routerID int, kind, name string) (api.DomainsResponse, error) {
+	var out api.DomainsResponse
+	err := c.post("/v1/domains/add", api.DomainChangeRequest{Code: c.code, RouterID: routerID, Kind: kind, Name: name}, &out)
+	return out, err
+}
+
+func (c *Client) RemoveDomain(routerID int, kind, name string) (api.DomainsResponse, error) {
+	var out api.DomainsResponse
+	err := c.post("/v1/domains/remove", api.DomainChangeRequest{Code: c.code, RouterID: routerID, Kind: kind, Name: name}, &out)
+	return out, err
+}
+
 func (c *Client) Routers() (api.RoutersResponse, error) {
 	var out api.RoutersResponse
 	err := c.post("/v1/routers", api.StatusRequest{Code: c.code}, &out)

@@ -25,12 +25,23 @@ func readFile(r Runner, path string) (string, error) {
 }
 
 // только для временных файлов
+type inputRunner interface {
+	RunInput(cmd, input string) (string, error)
+}
+
 func writeFile(r Runner, path, content string) error {
-	if strings.Contains(content, heredocToken) {
-		return fmt.Errorf("содержимое файла %s содержит служебный маркер", path)
-	}
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
+	}
+	if ir, ok := r.(inputRunner); ok {
+		if out, err := ir.RunInput("cat > "+shq(path), content); err != nil {
+			return fmt.Errorf("не смог записать %s: %w (%s)", path, err, strings.TrimSpace(out))
+		}
+		return nil
+	}
+
+	if strings.Contains(content, heredocToken) {
+		return fmt.Errorf("содержимое файла %s содержит служебный маркер", path)
 	}
 	cmd := fmt.Sprintf("cat > %s <<'%s'\n%s%s\n", shq(path), heredocToken, content, heredocToken)
 	if out, err := r.Run(cmd); err != nil {

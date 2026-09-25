@@ -40,6 +40,39 @@ type AddRouterResponse struct {
 	AccessCode string     `json:"access_code"`
 }
 
+type DomainEntry struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type DomainsResponse struct {
+	Router  RouterInfo    `json:"router"`
+	Entries []DomainEntry `json:"entries"`
+}
+
+type DomainSearchRequest struct {
+	Code     string `json:"code,omitempty"`
+	RouterID int    `json:"router_id,omitempty"`
+	Query    string `json:"query"`
+}
+
+type DomainMatch struct {
+	Name string `json:"name"`
+	Size int    `json:"size"`
+}
+
+type DomainSearchResponse struct {
+	Matches []DomainMatch `json:"matches"`
+	Domain  string        `json:"domain,omitempty"` // запрос похож на домен
+}
+
+type DomainChangeRequest struct {
+	Code     string `json:"code,omitempty"`
+	RouterID int    `json:"router_id,omitempty"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+}
+
 type ActionRequest struct {
 	Code     string `json:"code,omitempty"`
 	RouterID int    `json:"router_id,omitempty"`
@@ -117,6 +150,9 @@ const (
 	ErrServiceFailed   = "E-16"
 	ErrRouterExists    = "E-17"
 	ErrRouterRefused   = "E-18"
+	ErrCategoryTooBig  = "E-19"
+	ErrDomainExists    = "E-21"
+	ErrDomainInvalid   = "E-22"
 	ErrInternal        = "E-20"
 )
 
@@ -133,6 +169,9 @@ var messages = map[string]string{
 	ErrServiceFailed:   "Не удалось переключить VPN. Администратор уведомлён.",
 	ErrRouterExists:    "Роутер с таким портом туннеля уже заведён.",
 	ErrRouterRefused:   "Не удалось подключиться к роутеру: проверьте порт, пользователя и пароль.",
+	ErrCategoryTooBig:  "Слишком большая категория для этого роутера, обратитесь к администратору.",
+	ErrDomainExists:    "Этот ресурс уже проксируется.",
+	ErrDomainInvalid:   "Не нашёл такой ресурс и не похоже на адрес сайта.",
 	ErrInternal:        "Внутренняя ошибка. Администратор уведомлён.",
 }
 
