@@ -101,6 +101,7 @@ func main() {
 	mux.HandleFunc("/v1/reboot", s.handleReboot)
 	mux.HandleFunc("/v1/check", s.handleCheck)
 	mux.HandleFunc("/v1/routers/add", s.handleAddRouter)
+	mux.HandleFunc("/v1/routers/rename", s.handleRename)
 	mux.HandleFunc("/v1/domains", s.handleDomains)
 	mux.HandleFunc("/v1/domains/search", s.handleDomainSearch)
 	mux.HandleFunc("/v1/domains/add", s.handleDomainAdd)
@@ -167,7 +168,7 @@ func (s *server) handleRouters(w http.ResponseWriter, r *http.Request) {
 	}
 	out := api.RoutersResponse{}
 	for _, rc := range routers {
-		out.Routers = append(out.Routers, api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware})
+		out.Routers = append(out.Routers, routerInfo(rc, actor{admin: true}))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -263,7 +264,8 @@ func (s *server) handleAddRouter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := s.st.AddRouter(store.Router{
-		Name: req.Name, Firmware: req.Firmware, TunnelPort: req.TunnelPort,
+		Name: req.Name, DisplayName: strings.TrimSpace(req.DisplayName),
+		Firmware: req.Firmware, TunnelPort: req.TunnelPort,
 		SSHUser: req.SSHUser, AuthType: req.AuthType, AuthSecret: req.AuthSecret,
 		HostKey: client.HostKey(),
 	})
@@ -274,9 +276,39 @@ func (s *server) handleAddRouter(w http.ResponseWriter, r *http.Request) {
 	s.st.Log(id, "admin", "add_router", true, "ok", req.Name)
 
 	writeJSON(w, http.StatusOK, api.AddRouterResponse{
-		Router:     api.RouterInfo{ID: id, Name: req.Name, Firmware: req.Firmware},
+		Router:     api.RouterInfo{ID: id, Name: req.Name, Firmware: req.Firmware, DisplayName: req.DisplayName},
 		AccessCode: auth.Format(auth.Code(s.key, req.TunnelPort)),
 	})
+}
+
+func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
+	var req api.RenameRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	if !a.admin {
+		writeError(w, http.StatusForbidden, api.ErrBadCode, nil)
+		return
+	}
+	name := strings.TrimSpace(req.DisplayName)
+	if len([]rune(name)) > 40 {
+		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, nil)
+		return
+	}
+	if err := s.st.SetDisplayName(req.RouterID, name); err != nil {
+		writeError(w, http.StatusNotFound, api.ErrBadCode, err)
+		return
+	}
+	rc, err := s.st.Router(req.RouterID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, routerInfo(rc, a))
 }
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +331,7 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, api.StateResponse{
-		Router: api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware},
+		Router: routerInfo(rc, a),
 		Ops:    ops,
 	})
 }
@@ -357,7 +389,7 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	_ = s.st.CachePut(rc.ID, req.Op, state)
 	s.st.Log(rc.ID, who, req.Op, req.Value, "ok", "")
 
-	writeJSON(w, http.StatusOK, stateResponse(rc, req.Op, state, time.Now().UTC(), false))
+	writeJSON(w, http.StatusOK, stateResponse(routerInfo(rc, a), req.Op, state, time.Now().UTC(), false))
 }
 
 // не чаще раза в 10 минут на роутер
@@ -418,7 +450,7 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware}
+	info := routerInfo(rc, a)
 	resp := api.HealthResponse{Router: info}
 
 	client, ctrl, err := s.connect(rc)
@@ -641,11 +673,23 @@ func (s *server) connect(rc store.Router) (*sshconn.Client, router.Controller, e
 	return client, ctrl, nil
 }
 
-func stateResponse(rc store.Router, op string, value bool, readAt time.Time, stale bool) api.StateResponse {
+func stateResponse(info api.RouterInfo, op string, value bool, readAt time.Time, stale bool) api.StateResponse {
 	return api.StateResponse{
-		Router: api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware},
+		Router: info,
 		Ops:    []api.OpState{{Op: op, Value: value, ReadAt: readAt, Stale: stale}},
 	}
+}
+
+// клиенту не видно внутреннее имя
+func routerInfo(rc store.Router, a actor) api.RouterInfo {
+	if a.admin {
+		return api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware, DisplayName: rc.DisplayName}
+	}
+	name := rc.DisplayName
+	if name == "" {
+		name = "Роутер"
+	}
+	return api.RouterInfo{ID: rc.ID, Name: name, Firmware: rc.Firmware}
 }
 
 // подробности остаются в логе сервера

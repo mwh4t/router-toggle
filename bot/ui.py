@@ -25,7 +25,10 @@ def vpn_text(value: bool) -> str:
 
 def state_text(state: dict) -> str:
     udp, vpn = find_op(state, "udp_proxy"), find_op(state, "vpn")
-    lines = [f"🏠 <b>{state['router']['name']}</b>", ""]
+    lines = [f"🏠 <b>{state['router']['name']}</b>"]
+    if state["router"].get("display_name"):
+        lines.append(f"👤 для клиента: {state['router']['display_name']}")
+    lines.append("")
     if udp.get("stale"):
         lines.append(f"⚠️ роутер не отвечает, данные от {udp['read_at'][11:16]}")
         lines.append("")
@@ -52,3 +55,21 @@ def confirm_text(kind: str, value: int) -> str:
         return "🛡 Включить VPN?" if value else "🛡 Выключить VPN до перезагрузки роутера?"
     action = "Включить" if value else "Выключить"
     return f"🎮 {action} игровые порты? На пару секунд порвутся соединения."
+
+
+def entry_title(e: dict) -> str:
+    return f"{e['name']} (сервис)" if e["kind"] == "category" else e["name"]
+
+
+def domains_text(res: dict) -> str:
+    lines = [f"🌐 <b>{res['router']['name']}</b> · сайты через VPN", ""]
+    entries = res.get("entries") or []
+    if not entries:
+        lines.append("Своих сайтов пока нет")
+    for e in entries:
+        lines.append(f"• {entry_title(e)}")
+    return "\n".join(lines)
+
+
+def match_label(m: dict) -> str:
+    return f"🧩 {m['name']} · доменов: {m['size']}"

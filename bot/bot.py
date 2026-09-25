@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from dotenv import load_dotenv
 
 from api import API, APIError
-from ui import check_text, confirm_text, find_op, state_text
+from ui import check_text, confirm_text, domains_text, entry_title, find_op, match_label, state_text
 
 load_dotenv()
 
@@ -25,8 +25,17 @@ api = API(API_URL)
 dp = Dispatcher()
 
 
+class DomainForm(StatesGroup):
+    query = State()
+
+
+class RenameForm(StatesGroup):
+    name = State()
+
+
 class NewRouter(StatesGroup):
     name = State()
+    display = State()
     firmware = State()
     port = State()
     user = State()
@@ -66,6 +75,8 @@ def router_keyboard(rid: int, state: dict | None) -> InlineKeyboardMarkup:
         if vpn:
             rows.append(button("🛡 Выключить VPN" if vpn["value"] else "🛡 Включить VPN",
                                f"ask:vpn:{rid}:{int(not vpn['value'])}"))
+    rows.append(button("🌐 Сайты через VPN", f"dom:{rid}"))
+    rows.append(button("✏️ Имя для клиента", f"ren:{rid}"))
     rows.append([
         InlineKeyboardButton(text="🩺 Проверка", callback_data=f"chk:{rid}"),
         InlineKeyboardButton(text="🔄 Перезагрузка", callback_data=f"ask:rb:{rid}:1"),
@@ -155,6 +166,7 @@ async def cb_check(call: CallbackQuery):
         text = check_text(await api.check(ADMIN_CODE, rid))
     except APIError as e:
         text = f"⚠️ {e.message}"
+    # кнопки переключения зависят от состояния
     try:
         state = await api.status(ADMIN_CODE, rid)
     except APIError:
@@ -195,6 +207,165 @@ async def cb_do(call: CallbackQuery):
     await show_router(call, rid, "✅ Готово\n\n")
 
 
+def domains_keyboard(rid: int, entries: list[dict]) -> InlineKeyboardMarkup:
+    rows = [button("➕ Добавить сайт или сервис", f"dadd:{rid}")]
+    for i, e in enumerate(entries):
+        rows.append(button(f"🗑 {entry_title(e)}", f"drm:{rid}:{i}"))
+    rows.append(button("← Назад", f"rt:{rid}"))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_domains(call: CallbackQuery, rid: int, note: str = "") -> None:
+    try:
+        res = await api.domains(ADMIN_CODE, rid)
+    except APIError as e:
+        await edit(call.message, f"{note}⚠️ {e.message}",
+                   InlineKeyboardMarkup(inline_keyboard=[button("← Назад", f"rt:{rid}")]))
+        return
+    await edit(call.message, note + domains_text(res), domains_keyboard(rid, res.get("entries") or []))
+
+
+@dp.callback_query(F.data.startswith("dom:"))
+async def cb_domains(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await state.clear()
+    await call.answer()
+    await show_domains(call, int(call.data.split(":")[1]))
+
+
+@dp.callback_query(F.data.startswith("drm:"))
+async def cb_domain_ask(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer()
+    _, rid, i = call.data.split(":")
+    rid, i = int(rid), int(i)
+    entries = (await api.domains(ADMIN_CODE, rid)).get("entries") or []
+    if i >= len(entries):
+        await show_domains(call, rid)
+        return
+    await edit(call.message,
+               f"{call.message.html_text}\n\n🗑 Убрать {entry_title(entries[i])} из VPN?",
+               InlineKeyboardMarkup(inline_keyboard=[[
+                   InlineKeyboardButton(text="✅ Да", callback_data=f"drmy:{rid}:{i}"),
+                   InlineKeyboardButton(text="✖️ Отмена", callback_data=f"dom:{rid}"),
+               ]]))
+
+
+@dp.callback_query(F.data.startswith("drmy:"))
+async def cb_domain_remove(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Применяю…")
+    _, rid, i = call.data.split(":")
+    rid, i = int(rid), int(i)
+    entries = (await api.domains(ADMIN_CODE, rid)).get("entries") or []
+    if i >= len(entries):
+        await show_domains(call, rid)
+        return
+    e = entries[i]
+    try:
+        await api.remove_domain(ADMIN_CODE, e["kind"], e["name"], rid)
+    except APIError as err:
+        await show_domains(call, rid, f"⚠️ {err.message}\n\n")
+        return
+    await show_domains(call, rid, "✅ Готово\n\n")
+
+
+@dp.callback_query(F.data.startswith("dadd:"))
+async def cb_domain_add(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer()
+    rid = int(call.data.split(":")[1])
+    await state.set_state(DomainForm.query)
+    await state.update_data(rid=rid)
+    await edit(call.message, "🔎 Напишите название сервиса или адрес сайта",
+               InlineKeyboardMarkup(inline_keyboard=[button("✖️ Отмена", f"dom:{rid}")]))
+
+
+@dp.message(StateFilter(DomainForm.query), F.text)
+async def on_domain_query(message: Message, state: FSMContext):
+    if not allowed(message.from_user.id):
+        return
+    rid = (await state.get_data())["rid"]
+    try:
+        res = await api.search_domains(ADMIN_CODE, message.text.strip(), rid)
+    except APIError as e:
+        await message.answer(f"⚠️ {e.message}")
+        return
+
+    options, rows = [], []
+    for m in res.get("matches") or []:
+        rows.append(button(match_label(m), f"dpick:{rid}:{len(options)}"))
+        options.append({"kind": "category", "name": m["name"]})
+    if res.get("domain"):
+        rows.append(button(f"🔗 Только сайт {res['domain']}", f"dpick:{rid}:{len(options)}"))
+        options.append({"kind": "domain", "name": res["domain"]})
+    if not options:
+        await message.answer("🤷 Ничего не нашёл. Попробуйте другое название или адрес сайта, например example.com")
+        return
+
+    await state.set_state(None)
+    await state.update_data(options=options)
+    rows.append(button("✖️ Отмена", f"dom:{rid}"))
+    await message.answer("Что добавить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.callback_query(F.data.startswith("dpick:"))
+async def cb_domain_pick(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    _, rid, i = call.data.split(":")
+    rid, i = int(rid), int(i)
+    options = (await state.get_data()).get("options") or []
+    await state.clear()
+    if i >= len(options):
+        await call.answer("Список устарел, поищите заново")
+        return
+    await call.answer("Применяю…")
+    o = options[i]
+    try:
+        await api.add_domain(ADMIN_CODE, o["kind"], o["name"], rid)
+    except APIError as e:
+        await show_domains(call, rid, f"⚠️ {e.message}\n\n")
+        return
+    await show_domains(call, rid, f"✅ {o['name']} идёт через VPN\n\n")
+
+
+@dp.callback_query(F.data.startswith("ren:"))
+async def cb_rename(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer()
+    rid = int(call.data.split(":")[1])
+    await state.set_state(RenameForm.name)
+    await state.update_data(rid=rid)
+    await edit(call.message, "✏️ Как этот роутер будут видеть клиенты? Отправьте «-», чтобы убрать имя.",
+               InlineKeyboardMarkup(inline_keyboard=[button("✖️ Отмена", f"rt:{rid}")]))
+
+
+@dp.message(StateFilter(RenameForm.name), F.text)
+async def on_rename(message: Message, state: FSMContext):
+    if not allowed(message.from_user.id):
+        return
+    rid = (await state.get_data())["rid"]
+    await state.clear()
+    name = message.text.strip()
+    try:
+        await api.rename_router(ADMIN_CODE, rid, "" if name == "-" else name)
+    except APIError as e:
+        await message.answer(f"⚠️ {e.message}")
+        return
+    try:
+        st = await api.status(ADMIN_CODE, rid)
+    except APIError:
+        await message.answer("✅ Готово", reply_markup=router_keyboard(rid, None))
+        return
+    await message.answer("✅ Готово\n\n" + state_text(st), reply_markup=router_keyboard(rid, st))
+
+
 @dp.callback_query(F.data == "add")
 async def cb_add(call: CallbackQuery, state: FSMContext):
     if not allowed(call.from_user.id):
@@ -209,6 +380,16 @@ async def add_name(message: Message, state: FSMContext):
     if not allowed(message.from_user.id):
         return
     await state.update_data(name=message.text.strip())
+    await state.set_state(NewRouter.display)
+    await message.answer("Название для клиента (Дом, Дача…)? Отправьте «-», чтобы пропустить.")
+
+
+@dp.message(StateFilter(NewRouter.display), F.text)
+async def add_display(message: Message, state: FSMContext):
+    if not allowed(message.from_user.id):
+        return
+    display = message.text.strip()
+    await state.update_data(display="" if display == "-" else display)
     await state.set_state(NewRouter.firmware)
     await message.answer("Прошивка?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="keenetic", callback_data="fw:keenetic"),
@@ -266,6 +447,7 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
     try:
         res = await api.add_router(ADMIN_CODE, {
             "name": data["name"],
+            "display_name": data.get("display", ""),
             "firmware": data["firmware"],
             "tunnel_port": data["port"],
             "ssh_user": data["user"],

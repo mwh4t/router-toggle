@@ -32,6 +32,21 @@ class API:
     async def add_router(self, code: str, router: dict) -> dict:
         return await self._post(code, "/v1/routers/add", router)
 
+    async def domains(self, code: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/domains", {"router_id": router_id})
+
+    async def search_domains(self, code: str, query: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/domains/search", {"router_id": router_id, "query": query})
+
+    async def add_domain(self, code: str, kind: str, name: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/domains/add", {"router_id": router_id, "kind": kind, "name": name})
+
+    async def remove_domain(self, code: str, kind: str, name: str, router_id: int = 0) -> dict:
+        return await self._post(code, "/v1/domains/remove", {"router_id": router_id, "kind": kind, "name": name})
+
+    async def rename_router(self, code: str, router_id: int, display_name: str) -> dict:
+        return await self._post(code, "/v1/routers/rename", {"router_id": router_id, "display_name": display_name})
+
     async def log(self, code: str, limit: int = 20) -> list[dict]:
         data = await self._post(code, "/v1/log", {"limit": limit})
         return data.get("entries") or []

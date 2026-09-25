@@ -86,6 +86,12 @@ func (c *Client) RemoveDomain(routerID int, kind, name string) (api.DomainsRespo
 	return out, err
 }
 
+func (c *Client) RenameRouter(routerID int, displayName string) (api.RouterInfo, error) {
+	var out api.RouterInfo
+	err := c.post("/v1/routers/rename", api.RenameRequest{Code: c.code, RouterID: routerID, DisplayName: displayName}, &out)
+	return out, err
+}
+
 func (c *Client) Routers() (api.RoutersResponse, error) {
 	var out api.RoutersResponse
 	err := c.post("/v1/routers", api.StatusRequest{Code: c.code}, &out)

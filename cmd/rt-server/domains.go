@@ -75,7 +75,7 @@ func (s *server) handleDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, api.DomainsResponse{
-		Router:  api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware},
+		Router:  routerInfo(rc, a),
 		Entries: toAPI(entries),
 	})
 }
@@ -208,11 +208,12 @@ func (s *server) changeDomains(w http.ResponseWriter, r *http.Request, add bool)
 	s.st.Log(rc.ID, actorName(a), op, add, "ok", entry.Kind+":"+entry.Name)
 
 	writeJSON(w, http.StatusOK, api.DomainsResponse{
-		Router:  api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware},
+		Router:  routerInfo(rc, a),
 		Entries: toAPI(next),
 	})
 }
 
+// пустая строка
 func (s *server) checkNew(rc store.Router, a actor, e *router.DomainEntry) string {
 	switch e.Kind {
 	case router.KindDomain:
@@ -251,7 +252,7 @@ func (s *server) refreshLoop() {
 	}
 }
 
-// свежий dlc.dat и пересборка категорий на openwrt
+// пересборка категорий на openwrt
 func (s *server) refreshDomains() {
 	if err := geosite.Download(s.cfg.GeositePath); err != nil {
 		s.tg.Send("geosite", fmt.Sprintf("🟠 Обновление dlc.dat не удалось\n\n%v", err))

@@ -12,14 +12,15 @@ import (
 var ErrNotFound = errors.New("роутер не найден")
 
 type Router struct {
-	ID         int
-	Name       string
-	Firmware   string
-	TunnelPort int
-	SSHUser    string
-	AuthType   string
-	AuthSecret string
-	HostKey    string
+	ID          int
+	Name        string
+	DisplayName string
+	Firmware    string
+	TunnelPort  int
+	SSHUser     string
+	AuthType    string
+	AuthSecret  string
+	HostKey     string
 }
 
 type Store struct {
@@ -69,13 +70,38 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("схема базы: %w", err)
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("миграция базы: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(routers)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "display_name" {
+			return nil
+		}
+	}
+	_, err = db.Exec(`ALTER TABLE routers ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`)
+	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Routers() ([]Router, error) {
-	rows, err := s.db.Query(`SELECT id, name, firmware, tunnel_port, ssh_user,
+	rows, err := s.db.Query(`SELECT id, name, display_name, firmware, tunnel_port, ssh_user,
 		auth_type, auth_secret, host_key FROM routers ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -85,7 +111,7 @@ func (s *Store) Routers() ([]Router, error) {
 	var out []Router
 	for rows.Next() {
 		var r Router
-		if err := rows.Scan(&r.ID, &r.Name, &r.Firmware, &r.TunnelPort,
+		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
 			&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey); err != nil {
 			return nil, err
 		}
@@ -96,9 +122,9 @@ func (s *Store) Routers() ([]Router, error) {
 
 func (s *Store) Router(id int) (Router, error) {
 	var r Router
-	err := s.db.QueryRow(`SELECT id, name, firmware, tunnel_port, ssh_user,
+	err := s.db.QueryRow(`SELECT id, name, display_name, firmware, tunnel_port, ssh_user,
 		auth_type, auth_secret, host_key FROM routers WHERE id = ?`, id).
-		Scan(&r.ID, &r.Name, &r.Firmware, &r.TunnelPort,
+		Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
 			&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Router{}, ErrNotFound
@@ -108,15 +134,26 @@ func (s *Store) Router(id int) (Router, error) {
 
 func (s *Store) AddRouter(r Router) (int, error) {
 	res, err := s.db.Exec(`INSERT INTO routers
-		(name, firmware, tunnel_port, ssh_user, auth_type, auth_secret, host_key, added_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Name, r.Firmware, r.TunnelPort, r.SSHUser,
+		(name, display_name, firmware, tunnel_port, ssh_user, auth_type, auth_secret, host_key, added_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Name, r.DisplayName, r.Firmware, r.TunnelPort, r.SSHUser,
 		r.AuthType, r.AuthSecret, r.HostKey, now())
 	if err != nil {
 		return 0, err
 	}
 	id, err := res.LastInsertId()
 	return int(id), err
+}
+
+func (s *Store) SetDisplayName(id int, name string) error {
+	res, err := s.db.Exec(`UPDATE routers SET display_name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) CachePut(routerID int, op string, value bool) error {

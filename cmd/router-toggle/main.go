@@ -278,6 +278,13 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 		if showName {
 			fmt.Printf("%s\n", state.Router.Name)
 		}
+		if routerID != 0 {
+			shown := state.Router.DisplayName
+			if shown == "" {
+				shown = "не задано"
+			}
+			fmt.Printf("  для клиента: %s\n", shown)
+		}
 		if udp.Stale {
 			fmt.Printf("  роутер не отвечает, данные %s\n", ago(udp.ReadAt))
 		}
@@ -288,6 +295,7 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 
 		const (
 			optDomains = "Сайты через VPN"
+			optRename  = "Название для клиента"
 			optCheck   = "Проверка"
 			optReboot  = "Перезагрузить роутер"
 			optReload  = "Обновить"
@@ -306,7 +314,11 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 		if vpn.Op != "" {
 			options = append(options, optVPN)
 		}
-		options = append(options, optDomains, optCheck, optReboot, optReload, optExit)
+		options = append(options, optDomains, optCheck, optReboot)
+		if routerID != 0 {
+			options = append(options, optRename)
+		}
+		options = append(options, optReload, optExit)
 
 		var choice string
 		if err := selectOne("", options, &choice); err != nil || choice == optExit {
@@ -318,6 +330,15 @@ func routerLoop(c *client.Client, routerID int, showName bool, onName func(strin
 			continue
 		case optDomains:
 			domainsLoop(c, routerID)
+		case optRename:
+			var name string
+			prompt := &survey.Input{Message: "Название для клиента:", Default: state.Router.DisplayName}
+			if err := survey.AskOne(prompt, &name); err != nil {
+				continue
+			}
+			if _, err := c.RenameRouter(routerID, name); err != nil {
+				report(err)
+			}
 		case optCheck:
 			runCheck(c, routerID)
 		case optReboot:
@@ -496,6 +517,9 @@ func addRouter(c *client.Client) (api.RoutersResponse, error) {
 	var port, user string
 
 	if err := ask("Название роутера:", &req.Name); err != nil {
+		return api.RoutersResponse{}, err
+	}
+	if err := survey.AskOne(&survey.Input{Message: "Название для клиента (Дом, Дача…):"}, &req.DisplayName); err != nil {
 		return api.RoutersResponse{}, err
 	}
 	if err := selectOne("Прошивка:", []string{"keenetic", "openwrt"}, &req.Firmware); err != nil {
