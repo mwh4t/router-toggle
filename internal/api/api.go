@@ -36,6 +36,10 @@ type AddRouterRequest struct {
 	AuthSecret string `json:"auth_secret"`
 }
 
+type RouterCodeResponse struct {
+	AccessCode string `json:"access_code"`
+}
+
 type RenameRequest struct {
 	Code        string `json:"code"`
 	RouterID    int    `json:"router_id"`

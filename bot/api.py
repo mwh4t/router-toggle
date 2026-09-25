@@ -47,6 +47,10 @@ class API:
     async def rename_router(self, code: str, router_id: int, display_name: str) -> dict:
         return await self._post(code, "/v1/routers/rename", {"router_id": router_id, "display_name": display_name})
 
+    async def router_code(self, code: str, router_id: int) -> str:
+        data = await self._post(code, "/v1/routers/code", {"router_id": router_id})
+        return data["access_code"]
+
     async def log(self, code: str, limit: int = 20) -> list[dict]:
         data = await self._post(code, "/v1/log", {"limit": limit})
         return data.get("entries") or []

@@ -102,6 +102,7 @@ func main() {
 	mux.HandleFunc("/v1/check", s.handleCheck)
 	mux.HandleFunc("/v1/routers/add", s.handleAddRouter)
 	mux.HandleFunc("/v1/routers/rename", s.handleRename)
+	mux.HandleFunc("/v1/routers/code", s.handleRouterCode)
 	mux.HandleFunc("/v1/domains", s.handleDomains)
 	mux.HandleFunc("/v1/domains/search", s.handleDomainSearch)
 	mux.HandleFunc("/v1/domains/add", s.handleDomainAdd)
@@ -279,6 +280,28 @@ func (s *server) handleAddRouter(w http.ResponseWriter, r *http.Request) {
 		Router:     api.RouterInfo{ID: id, Name: req.Name, Firmware: req.Firmware, DisplayName: req.DisplayName},
 		AccessCode: auth.Format(auth.Code(s.key, req.TunnelPort)),
 	})
+}
+
+// код клиента для ссылки на бота
+func (s *server) handleRouterCode(w http.ResponseWriter, r *http.Request) {
+	var req api.ActionRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	a, ok := s.resolve(w, r, req.Code)
+	if !ok {
+		return
+	}
+	if !a.admin {
+		writeError(w, http.StatusForbidden, api.ErrBadCode, nil)
+		return
+	}
+	rc, err := s.st.Router(req.RouterID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, api.ErrBadCode, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, api.RouterCodeResponse{AccessCode: auth.Format(auth.Code(s.key, rc.TunnelPort))})
 }
 
 func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {

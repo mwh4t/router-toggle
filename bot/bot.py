@@ -20,6 +20,7 @@ TOKEN = os.environ["BOT_TOKEN"]
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8080")
 ADMIN_CODE = os.environ["ADMIN_CODE"]
 ALLOWED = {int(x) for x in os.environ["ALLOWED_USER_IDS"].split(",") if x.strip()}
+PUBLIC_BOT = os.getenv("PUBLIC_BOT", "").lstrip("@")
 
 api = API(API_URL)
 dp = Dispatcher()
@@ -76,7 +77,10 @@ def router_keyboard(rid: int, state: dict | None) -> InlineKeyboardMarkup:
             rows.append(button("🛡 Выключить VPN" if vpn["value"] else "🛡 Включить VPN",
                                f"ask:vpn:{rid}:{int(not vpn['value'])}"))
     rows.append(button("🌐 Сайты через VPN", f"dom:{rid}"))
-    rows.append(button("✏️ Имя для клиента", f"ren:{rid}"))
+    rows.append([
+        InlineKeyboardButton(text="✏️ Имя для клиента", callback_data=f"ren:{rid}"),
+        InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"lnk:{rid}"),
+    ])
     rows.append([
         InlineKeyboardButton(text="🩺 Проверка", callback_data=f"chk:{rid}"),
         InlineKeyboardButton(text="🔄 Перезагрузка", callback_data=f"ask:rb:{rid}:1"),
@@ -332,6 +336,23 @@ async def cb_domain_pick(call: CallbackQuery, state: FSMContext):
         await show_domains(call, rid, f"⚠️ {e.message}\n\n")
         return
     await show_domains(call, rid, f"✅ {o['name']} идёт через VPN\n\n")
+
+
+@dp.callback_query(F.data.startswith("lnk:"))
+async def cb_link(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer()
+    rid = int(call.data.split(":")[1])
+    try:
+        code = await api.router_code(ADMIN_CODE, rid)
+    except APIError as e:
+        await call.message.answer(f"⚠️ {e.message}")
+        return
+    text = f"🔑 Код: <code>{code}</code>"
+    if PUBLIC_BOT:
+        text += f"\n🔗 https://t.me/{PUBLIC_BOT}?start={code}"
+    await call.message.answer(text, disable_web_page_preview=True)
 
 
 @dp.callback_query(F.data.startswith("ren:"))
