@@ -115,8 +115,7 @@ func (k Keenetic) Plan(r Runner, op Op, value bool) (*Plan, error) {
 }
 
 func (Keenetic) Restart(r Runner) error {
-	// vpn выключен
-	out, err := r.Run("if iptables -t mangle -S 2>/dev/null | grep -q xkeen_rule; then xkeen -restart; fi")
+	out, err := r.Run("if iptables -t mangle -S 2>/dev/null | grep -q xkeen_rule; then xkeen -restart && sleep 2 && pidof xray >/dev/null; fi")
 	if err != nil {
 		return fmt.Errorf("xkeen -restart завершился с ошибкой: %w (%s)", err, strings.TrimSpace(out))
 	}

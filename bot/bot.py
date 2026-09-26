@@ -24,6 +24,8 @@ PUBLIC_BOT = os.getenv("PUBLIC_BOT", "").lstrip("@")
 
 api = API(API_URL)
 dp = Dispatcher()
+dp.message.filter(F.from_user.id.in_(ALLOWED))
+dp.callback_query.filter(F.from_user.id.in_(ALLOWED))
 
 
 class DomainForm(StatesGroup):

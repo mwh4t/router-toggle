@@ -1,3 +1,5 @@
+import html
+
 OP_TITLE = "Игровые порты"
 OP_HINT = "Steam / FACEIT EU"
 
@@ -25,9 +27,9 @@ def vpn_text(value: bool) -> str:
 
 def state_text(state: dict) -> str:
     udp, vpn = find_op(state, "udp_proxy"), find_op(state, "vpn")
-    lines = [f"🏠 <b>{state['router']['name']}</b>"]
+    lines = [f"🏠 <b>{html.escape(state['router']['name'])}</b>"]
     if state["router"].get("display_name"):
-        lines.append(f"👤 для клиента: {state['router']['display_name']}")
+        lines.append(f"👤 для клиента: {html.escape(state['router']['display_name'])}")
     lines.append("")
     if udp.get("stale"):
         lines.append(f"⚠️ роутер не отвечает, данные от {udp['read_at'][11:16]}")
@@ -39,7 +41,7 @@ def state_text(state: dict) -> str:
 
 
 def check_text(res: dict) -> str:
-    lines = [f"🩺 <b>{res['router']['name']}</b>", ""]
+    lines = [f"🩺 <b>{html.escape(res['router']['name'])}</b>", ""]
     for c in res.get("checks") or []:
         line = f"{MARKS.get(c['state'], '❔')} {c['name']}"
         if c.get("hint"):
@@ -62,12 +64,12 @@ def entry_title(e: dict) -> str:
 
 
 def domains_text(res: dict) -> str:
-    lines = [f"🌐 <b>{res['router']['name']}</b> · сайты через VPN", ""]
+    lines = [f"🌐 <b>{html.escape(res['router']['name'])}</b> · сайты через VPN", ""]
     entries = res.get("entries") or []
     if not entries:
         lines.append("Своих сайтов пока нет")
     for e in entries:
-        lines.append(f"• {entry_title(e)}")
+        lines.append(f"• {html.escape(entry_title(e))}")
     return "\n".join(lines)
 
 

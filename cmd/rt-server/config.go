@@ -7,14 +7,16 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"router-toggle/internal/auth"
 )
 
 // файл с правами 600 вне репозитория
 type Config struct {
-	Listen    string `json:"listen"`
-	DBPath    string `json:"db_path"`
-	ServerKey string `json:"server_key"` // hex
-	AdminCode string `json:"admin_code"`
+	Listen      string `json:"listen"`
+	DBPath      string `json:"db_path"`
+	ServerKey   string `json:"server_key"` // hex
+	AdminCode   string `json:"admin_code"`
 	PublicIP    string `json:"public_ip"` // проверка соединения с vps
 	GeositePath string `json:"geosite_path"`
 
@@ -44,8 +46,8 @@ func LoadConfig(path string) (*Config, []byte, error) {
 	if err != nil || len(key) < 32 {
 		return nil, nil, fmt.Errorf("server_key: нужен hex из 32 байт, сгенерировать: openssl rand -hex 32")
 	}
-	if c.AdminCode == "" {
-		return nil, nil, fmt.Errorf("admin_code пустой")
+	if n := len(auth.Normalize(c.AdminCode)); n < 16 {
+		return nil, nil, fmt.Errorf("admin_code слишком слабый: значимых символов %d, нужно от 16 (A-Z без I и O, цифры 2-9)", n)
 	}
 	return &c, key, nil
 }

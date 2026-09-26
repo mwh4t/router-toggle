@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +41,6 @@ func main() {
 	configPath := flag.String("config", "/etc/router-toggle/config.json", "путь к конфигурации")
 	printCodes := flag.Bool("codes", false, "напечатать коды всех роутеров и выйти")
 	showLog := flag.Int("log", 0, "напечатать последние N записей журнала и выйти")
-	importFrom := flag.String("import", "", "импортировать роутеры из старого json и выйти")
 	flag.Parse()
 
 	cfg, key, err := LoadConfig(*configPath)
@@ -55,13 +53,6 @@ func main() {
 		log.Fatalf("база: %v", err)
 	}
 	defer st.Close()
-
-	if *importFrom != "" {
-		if err := importRouters(st, *importFrom); err != nil {
-			log.Fatalf("импорт: %v", err)
-		}
-		return
-	}
 
 	if *printCodes {
 		if err := printRouterCodes(st, key); err != nil {
@@ -87,7 +78,7 @@ func main() {
 		reboots: newCooldown(10 * time.Minute),
 		geo:     geosite.NewIndex(),
 	}
-	s.loadGeosite()
+	go s.loadGeosite()
 	go s.refreshLoop()
 
 	mux := http.NewServeMux()
@@ -429,16 +420,16 @@ func (s *server) handleReboot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.reboots.allow(rc.ID) {
-		writeError(w, http.StatusTooManyRequests, api.ErrRebootCooldown, nil)
-		return
-	}
-
 	if !s.locks.acquire(rc.ID) {
 		writeError(w, http.StatusConflict, api.ErrRouterBusy, nil)
 		return
 	}
 	defer s.locks.release(rc.ID)
+
+	if !s.reboots.allow(rc.ID) {
+		writeError(w, http.StatusTooManyRequests, api.ErrRebootCooldown, nil)
+		return
+	}
 
 	who := actorName(a)
 	client, ctrl, err := s.connect(rc)
@@ -756,17 +747,7 @@ func clientIP(r *http.Request) (string, bool) {
 	if err != nil {
 		ip = r.RemoteAddr
 	}
-	if !isLoopback(ip) {
-		return ip, true
-	}
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		parts := strings.Split(fwd, ",")
-		last := strings.TrimSpace(parts[len(parts)-1])
-		if last != "" && !isLoopback(last) {
-			return last, true
-		}
-	}
-	return ip, false
+	return ip, !isLoopback(ip)
 }
 
 func isLoopback(ip string) bool {
@@ -785,51 +766,4 @@ func writeError(w http.ResponseWriter, status int, code string, err error) {
 		log.Printf("%s: %v", code, err)
 	}
 	writeJSON(w, status, api.NewError(code))
-}
-
-// разовый перенос роутеров из конфига в базу
-func importRouters(st *store.Store, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var old struct {
-		Routers []struct {
-			Name       string `json:"name"`
-			Firmware   string `json:"firmware"`
-			TunnelPort int    `json:"tunnel_port"`
-			SSHUser    string `json:"ssh_user"`
-			AuthType   string `json:"auth_type"`
-			AuthSecret string `json:"auth_secret"`
-			HostKey    string `json:"host_key"`
-		} `json:"routers"`
-	}
-	if err := json.Unmarshal(data, &old); err != nil {
-		return err
-	}
-
-	existing, err := st.Routers()
-	if err != nil {
-		return err
-	}
-	known := map[int]bool{}
-	for _, r := range existing {
-		known[r.TunnelPort] = true
-	}
-
-	for _, r := range old.Routers {
-		if known[r.TunnelPort] {
-			fmt.Printf("пропуск %s: порт %d уже в базе\n", r.Name, r.TunnelPort)
-			continue
-		}
-		id, err := st.AddRouter(store.Router{
-			Name: r.Name, Firmware: r.Firmware, TunnelPort: r.TunnelPort,
-			SSHUser: r.SSHUser, AuthType: r.AuthType, AuthSecret: r.AuthSecret, HostKey: r.HostKey,
-		})
-		if err != nil {
-			return fmt.Errorf("%s: %w", r.Name, err)
-		}
-		fmt.Printf("добавлен id=%d %s (порт %d)\n", id, r.Name, r.TunnelPort)
-	}
-	return nil
 }
