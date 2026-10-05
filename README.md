@@ -36,6 +36,8 @@ every change is applied atomically: temp file → syntax check → backup → `m
 
 download the binary for your system from [releases](../../releases) and run it. enter the access code from your administrator - it is asked once and remembered
 
+the server address is built in. if it ever changes, run with `--api https://...` or set `RT_API` - no new download needed. the cli tells you when a newer release is out, `--version` shows yours
+
 <details>
 <summary><b>macos</b> - "cannot be opened"</summary>
 
@@ -156,7 +158,7 @@ replies only to allowed user ids. adds and renames routers, shares client links,
 make test      # go test ./...
 make run       # client with api address from .env
 make server    # linux/amd64 server binary
-make release   # clients for all platforms + checksums
+make release   # clients for all platforms + checksums, version from the git tag
 ```
 
 ```

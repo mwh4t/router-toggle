@@ -13,7 +13,7 @@ type Entry struct {
 }
 
 type Config struct {
-	APIURL  string  `json:"api_url"`
+	APIURL  string  `json:"-"` // не сохраняется
 	Entries []Entry `json:"entries"`
 
 	Code string `json:"code,omitempty"` // старый формат

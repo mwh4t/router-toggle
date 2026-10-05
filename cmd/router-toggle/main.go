@@ -20,10 +20,18 @@ const opTitle = "Игровые порты (Steam / FACEIT EU)"
 var defaultAPI = "" // задаётся при сборке
 
 func main() {
-	apiURL := flag.String("api", "", "адрес сервера (переопределяет сохранённый)")
+	apiURL := flag.String("api", "", "адрес сервера (иначе RT_API или встроенный)")
 	add := flag.Bool("add", false, "добавить ещё один код")
 	reset := flag.Bool("reset", false, "забыть все сохранённые коды и выйти")
+	showVersion := flag.Bool("version", false, "показать версию и выйти")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+	update := checkUpdate()
+	defer showUpdate(update)
 
 	if *reset {
 		if err := resetConfig(); err != nil {
@@ -37,8 +45,9 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	if *apiURL != "" {
-		cfg.APIURL = *apiURL
+	cfg.APIURL = *apiURL
+	if cfg.APIURL == "" {
+		cfg.APIURL = os.Getenv("RT_API")
 	}
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultAPI
@@ -53,6 +62,7 @@ func main() {
 	if err := resolveEntries(&cfg); err != nil {
 		fail(err)
 	}
+	showUpdate(update)
 
 	if *add {
 		if err := addEntry(&cfg); err != nil {
