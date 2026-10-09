@@ -98,6 +98,9 @@ func main() {
 	mux.HandleFunc("/v1/domains/search", s.handleDomainSearch)
 	mux.HandleFunc("/v1/domains/add", s.handleDomainAdd)
 	mux.HandleFunc("/v1/domains/remove", s.handleDomainRemove)
+	mux.HandleFunc("/v1/templates", s.handleTemplates)
+	mux.HandleFunc("/v1/templates/upload", s.handleTemplateUpload)
+	mux.HandleFunc("/v1/templates/apply", s.handleTemplateApply)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -727,6 +730,10 @@ func errorCode(err error) string {
 }
 
 func (s *server) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return s.decodeLimit(w, r, dst, 1<<16)
+}
+
+func (s *server) decodeLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return false
@@ -735,7 +742,7 @@ func (s *server) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 		writeError(w, http.StatusUpgradeRequired, api.ErrClientOutdated, nil)
 		return false
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(dst); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(dst); err != nil {
 		writeError(w, http.StatusBadRequest, api.ErrInternal, err)
 		return false
 	}

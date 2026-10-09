@@ -2,6 +2,7 @@
   "listen": "127.0.0.1:8080",
   "db_path": "/etc/router-toggle/router-toggle.db",
   "geosite_path": "/etc/router-toggle/dlc.dat",
+  "templates_dir": "/etc/router-toggle/templates",
   "server_key": "openssl rand -hex 32",
   "admin_code": "от 16 символов из A-Z без I и O и цифр 2-9",
   "telegram_token": "токен админского бота",

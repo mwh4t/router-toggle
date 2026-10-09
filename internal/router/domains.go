@@ -254,9 +254,31 @@ func (Keenetic) PlanDomains(r Runner, entries []DomainEntry, _ Expander) (*Plan,
 	if err != nil {
 		return nil, err
 	}
-	spans, err := routingRules(text)
+	updated, err := keeneticWithUser(text, entries)
 	if err != nil {
 		return nil, err
+	}
+
+	plan := &Plan{}
+	if updated == text {
+		return plan, nil
+	}
+	plan.Changes = append(plan.Changes, FileChange{
+		Path:    keeneticRoutingPath,
+		Before:  text,
+		Content: updated,
+		Validate: func(content string) error {
+			return keeneticCheckUser(content, entries)
+		},
+	})
+	return plan, nil
+}
+
+// правило пользователя после основного правила vless-reality
+func keeneticWithUser(text string, entries []DomainEntry) (string, error) {
+	spans, err := routingRules(text)
+	if err != nil {
+		return "", err
 	}
 
 	main, user := -1, -1
@@ -269,49 +291,37 @@ func (Keenetic) PlanDomains(r Runner, entries []DomainEntry, _ Expander) (*Plan,
 		}
 	}
 	if main == -1 {
-		return nil, fmt.Errorf("%w: нет правила vless-reality с доменами", ErrUnknownFormat)
+		return "", fmt.Errorf("%w: нет правила vless-reality с доменами", ErrUnknownFormat)
 	}
 
 	lineStart := strings.LastIndexByte(text[:spans[main].start], '\n') + 1
 	indent := text[lineStart:spans[main].start]
 	block := keeneticRuleText(indent, entries)
 
-	var updated string
 	switch {
 	case user >= 0 && len(entries) > 0:
-		updated = text[:spans[user].start] + block + text[spans[user].end:]
+		return text[:spans[user].start] + block + text[spans[user].end:], nil
 	case user >= 0:
-		updated = text[:spans[user-1].end] + text[spans[user].end:]
+		return text[:spans[user-1].end] + text[spans[user].end:], nil
 	case len(entries) > 0:
 		at := spans[main].end
-		updated = text[:at] + ",\n" + indent + block + text[at:]
-	default:
-		updated = text
+		return text[:at] + ",\n" + indent + block + text[at:], nil
 	}
+	return text, nil
+}
 
-	plan := &Plan{}
-	if updated == text {
-		return plan, nil
+func keeneticCheckUser(content string, entries []DomainEntry) error {
+	if !json.Valid([]byte(content)) {
+		return fmt.Errorf("результат не является корректным JSON")
 	}
-	plan.Changes = append(plan.Changes, FileChange{
-		Path:    keeneticRoutingPath,
-		Before:  text,
-		Content: updated,
-		Validate: func(content string) error {
-			if !json.Valid([]byte(content)) {
-				return fmt.Errorf("результат не является корректным JSON")
-			}
-			got, err := keeneticDomains(content)
-			if err != nil {
-				return err
-			}
-			if !sameEntries(got, entries) {
-				return fmt.Errorf("правило %s собрано неверно", userRuleTag)
-			}
-			return nil
-		},
-	})
-	return plan, nil
+	got, err := keeneticDomains(content)
+	if err != nil {
+		return err
+	}
+	if !sameEntries(got, entries) {
+		return fmt.Errorf("правило %s собрано неверно", userRuleTag)
+	}
+	return nil
 }
 
 func keeneticRuleText(indent string, entries []DomainEntry) string {
@@ -423,6 +433,28 @@ func (OpenWrt) PlanDomains(r Runner, entries []DomainEntry, expand Expander) (*P
 	if len(entries) == 0 && section == nil {
 		return &Plan{}, nil
 	}
+	updated, err := openwrtWithUser(head, entries, expand)
+	if err != nil {
+		return nil, err
+	}
+
+	plan := &Plan{}
+	if updated == text {
+		return plan, nil
+	}
+	plan.Changes = append(plan.Changes, FileChange{
+		Path:    openwrtServersPath,
+		Before:  text,
+		Content: updated,
+		Validate: func(content string) error {
+			return openwrtCheckUser(content, entries)
+		},
+	})
+	return plan, nil
+}
+
+// основная часть и секция пользователя
+func openwrtWithUser(head []string, entries []DomainEntry, expand Expander) (string, error) {
 	target := serversTarget(head)
 
 	var b strings.Builder
@@ -437,7 +469,7 @@ func (OpenWrt) PlanDomains(r Runner, entries []DomainEntry, expand Expander) (*P
 				domains = []string{e.Name}
 			case KindCategory:
 				if expand == nil {
-					return nil, fmt.Errorf("%w: категории без сервера недоступны", ErrNotSupported)
+					return "", fmt.Errorf("%w: категории без сервера недоступны", ErrNotSupported)
 				}
 				domains = expand(e.Name)
 			default:
@@ -449,35 +481,25 @@ func (OpenWrt) PlanDomains(r Runner, entries []DomainEntry, expand Expander) (*P
 			}
 		}
 	}
-	updated := b.String()
+	return b.String(), nil
+}
 
-	plan := &Plan{}
-	if updated == text {
-		return plan, nil
+func openwrtCheckUser(content string, entries []DomainEntry) error {
+	_, section := splitSection(content)
+	for _, l := range section {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "# ") {
+			continue
+		}
+		m := serverLineRe.FindStringSubmatch(l)
+		if m == nil || !ValidDomain(m[1]) {
+			return fmt.Errorf("строка %q не прошла проверку", l)
+		}
 	}
-	plan.Changes = append(plan.Changes, FileChange{
-		Path:    openwrtServersPath,
-		Before:  text,
-		Content: updated,
-		Validate: func(content string) error {
-			_, section := splitSection(content)
-			for _, l := range section {
-				l = strings.TrimSpace(l)
-				if l == "" || strings.HasPrefix(l, "# ") {
-					continue
-				}
-				m := serverLineRe.FindStringSubmatch(l)
-				if m == nil || !ValidDomain(m[1]) {
-					return fmt.Errorf("строка %q не прошла проверку", l)
-				}
-			}
-			if !sameEntries(openwrtDomains(content), entries) {
-				return fmt.Errorf("секция %q собрана неверно", userSection)
-			}
-			return nil
-		},
-	})
-	return plan, nil
+	if !sameEntries(openwrtDomains(content), entries) {
+		return fmt.Errorf("секция %q собрана неверно", userSection)
+	}
+	return nil
 }
 
 func (OpenWrt) RestartDNS(r Runner) error {

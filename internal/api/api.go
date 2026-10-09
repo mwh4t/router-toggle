@@ -143,6 +143,45 @@ type RoutersResponse struct {
 	Routers []RouterInfo `json:"routers"`
 }
 
+// эталоны маршрутизации
+type TemplateInfo struct {
+	Name      string    `json:"name"`
+	Firmware  string    `json:"firmware"`
+	Size      int       `json:"size"`
+	Lines     int       `json:"lines"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type TemplatesResponse struct {
+	Templates []TemplateInfo `json:"templates"`
+}
+
+type TemplateUploadRequest struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type TemplateApplyRequest struct {
+	Code     string `json:"code"`
+	RouterID int    `json:"router_id,omitempty"`
+	DryRun   bool   `json:"dry_run"`
+}
+
+// same, changes, applied, offline, busy, no_template или error
+type TemplateResult struct {
+	Router  RouterInfo `json:"router"`
+	Status  string     `json:"status"`
+	Added   int        `json:"added,omitempty"`
+	Removed int        `json:"removed,omitempty"`
+	Message string     `json:"message,omitempty"`
+}
+
+type TemplateApplyResponse struct {
+	Results []TemplateResult `json:"results,omitempty"`
+	Started bool             `json:"started,omitempty"`
+}
+
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -165,6 +204,7 @@ const (
 	ErrCategoryTooBig  = "E-19"
 	ErrDomainExists    = "E-21"
 	ErrDomainInvalid   = "E-22"
+	ErrTemplateInvalid = "E-23"
 	ErrInternal        = "E-20"
 )
 
@@ -184,6 +224,7 @@ var messages = map[string]string{
 	ErrCategoryTooBig:  "Слишком большая категория для этого роутера, обратитесь к администратору.",
 	ErrDomainExists:    "Этот ресурс уже проксируется.",
 	ErrDomainInvalid:   "Не нашёл такой ресурс и не похоже на адрес сайта.",
+	ErrTemplateInvalid: "Эталон не прошёл проверку.",
 	ErrInternal:        "Внутренняя ошибка. Администратор уведомлён.",
 }
 

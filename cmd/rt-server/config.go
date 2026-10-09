@@ -19,6 +19,8 @@ type Config struct {
 	AdminCode   string `json:"admin_code"`
 	GeositePath string `json:"geosite_path"`
 
+	TemplatesDir string `json:"templates_dir"` // эталоны маршрутизации
+
 	TelegramToken  string `json:"telegram_token"`
 	TelegramChatID string `json:"telegram_chat_id"`
 }
@@ -37,6 +39,9 @@ func LoadConfig(path string) (*Config, []byte, error) {
 	}
 	if c.GeositePath == "" {
 		c.GeositePath = "/etc/router-toggle/dlc.dat"
+	}
+	if c.TemplatesDir == "" {
+		c.TemplatesDir = "/etc/router-toggle/templates"
 	}
 	if c.DBPath == "" {
 		c.DBPath = "/etc/router-toggle/router-toggle.db"

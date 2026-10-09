@@ -75,3 +75,41 @@ def domains_text(res: dict) -> str:
 
 def match_label(m: dict) -> str:
     return f"🧩 {m['name']} · доменов: {m['size']}"
+
+
+TEMPLATE_FILES = ("dnsmasq.servers", "05_routing.json")
+TEMPLATE_MARKS = {"same": "➖", "changes": "📝", "applied": "✅", "offline": "📴",
+                  "busy": "⏳", "no_template": "❔", "error": "🔴"}
+
+
+def templates_text(templates: list[dict]) -> str:
+    lines = ["🗺 <b>Маршрутизация</b>", ""]
+    for t in templates:
+        if t["size"]:
+            when = t["updated_at"][:16].replace("T", " ")
+            lines.append(f"📄 {t['name']} · {t['firmware']} · строк: {t['lines']} · {when} UTC")
+        else:
+            lines.append(f"❔ {t['name']} · {t['firmware']} · эталона нет")
+    lines += ["", "Чтобы заменить эталон, пришли файл с таким же именем."]
+    return "\n".join(lines)
+
+
+def template_results_text(results: list[dict], title: str) -> str:
+    lines = [title, ""]
+    for r in results:
+        line = f"{TEMPLATE_MARKS.get(r['status'], '❔')} {html.escape(r['router']['name'])}"
+        status = r["status"]
+        if status in ("changes", "applied"):
+            line += f" · +{r.get('added', 0)} −{r.get('removed', 0)}"
+        elif status == "same":
+            line += " · совпадает с эталоном"
+        elif status == "offline":
+            line += " · не на связи"
+        elif status == "busy":
+            line += " · занят"
+        elif status == "no_template":
+            line += " · нет эталона"
+        elif status == "error":
+            line += f" · {html.escape(r.get('message', ''))}"
+        lines.append(line)
+    return "\n".join(lines)

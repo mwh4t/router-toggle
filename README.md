@@ -28,6 +28,7 @@ clients never see router credentials - only a personal access code that opens ex
 - **sites via vpn** - add any [v2fly](https://github.com/v2fly/domain-list-community) service by name, or a single domain
 - **health check** - router, internet, proxy service and vpn link at a glance
 - **reboot** - with confirmation and a cooldown
+- **routing templates** (admin bot) - send `dnsmasq.servers` or `05_routing.json` to the bot, compare with every router and roll it out to one or all of them; sites added by clients and the game ports state are kept
 - **manual mode** - direct ssh to your own router, no server involved
 
 every change is applied atomically: temp file → syntax check → backup → `mv` → restart → read-back → rollback on mismatch

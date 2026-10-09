@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import os
 
@@ -12,7 +13,18 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from dotenv import load_dotenv
 
 from api import API, APIError
-from ui import check_text, confirm_text, domains_text, entry_title, find_op, match_label, state_text
+from ui import (
+    TEMPLATE_FILES,
+    check_text,
+    confirm_text,
+    domains_text,
+    entry_title,
+    find_op,
+    match_label,
+    state_text,
+    template_results_text,
+    templates_text,
+)
 
 load_dotenv()
 
@@ -92,6 +104,7 @@ async def edit(message: Message, text: str, markup: InlineKeyboardMarkup | None 
 async def routers_keyboard() -> InlineKeyboardMarkup:
     routers = await api.routers(ADMIN_CODE)
     rows = [button(f"🏠 {r['name']}", f"rt:{r['id']}") for r in routers]
+    rows.append(button("🗺 Маршрутизация", "tpl"))
     rows.append(button("➕ Завести роутер", "add"))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -107,6 +120,7 @@ def router_keyboard(rid: int, state: dict | None) -> InlineKeyboardMarkup:
             rows.append(button("🛡 Выключить VPN" if vpn["value"] else "🛡 Включить VPN",
                                f"ask:vpn:{rid}:{int(not vpn['value'])}"))
     rows.append(button("🌐 Сайты через VPN", f"dom:{rid}"))
+    rows.append(button("🗺 Маршрутизация из эталона", f"tplr:{rid}"))
     rows.append([
         InlineKeyboardButton(text="✏️ Имя", callback_data=f"ren:{rid}"),
         InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"lnk:{rid}"),
@@ -524,6 +538,120 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
                f"Код доступа: <code>{res['access_code']}</code>",
                reply_markup=await routers_keyboard(),
                )
+
+
+# эталоны маршрутизации
+
+def templates_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        button("🔍 Сравнить со всеми роутерами", "tpld"),
+        button("← Роутеры", "list"),
+    ])
+
+
+@dp.callback_query(F.data == "tpl")
+async def cb_templates(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await state.clear()
+    await call.answer()
+    try:
+        templates = await api.templates(ADMIN_CODE)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {e.message}", templates_keyboard())
+        return
+    await edit(call.message, templates_text(templates), templates_keyboard())
+
+
+@dp.callback_query(F.data == "tpld")
+async def cb_templates_compare(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Сравниваю…")
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Назад", "tpl")])
+    try:
+        res = await api.apply_template(ADMIN_CODE, 0, dry_run=True)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {e.message}", back)
+        return
+    results = res.get("results") or []
+    rows = []
+    if any(r["status"] == "changes" for r in results):
+        rows.append(button("✅ Применить ко всем", "tpla"))
+    rows.append(button("← Назад", "tpl"))
+    await edit(call.message, template_results_text(results, "🗺 <b>Сравнение с эталоном</b>"),
+               InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.callback_query(F.data == "tpla")
+async def cb_templates_apply(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Запускаю…")
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Роутеры", "list")])
+    try:
+        await api.apply_template(ADMIN_CODE, 0, dry_run=False)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {e.message}", back)
+        return
+    await edit(call.message, "▶️ Применяю по одному роутеру, отчёт придёт отдельным сообщением.", back)
+
+
+@dp.callback_query(F.data.startswith("tplr:"))
+async def cb_router_template(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Сравниваю…")
+    rid = int(call.data.split(":")[1])
+    try:
+        res = await api.apply_template(ADMIN_CODE, rid, dry_run=True)
+    except APIError as e:
+        await show_router(call, rid, f"⚠️ {e.message}\n\n")
+        return
+    results = res.get("results") or []
+    rows = []
+    if results and results[0]["status"] == "changes":
+        rows.append(button("✅ Применить эталон", f"tplra:{rid}"))
+    rows.append(button("← Назад", f"rt:{rid}"))
+    await edit(call.message, template_results_text(results, "🗺 <b>Сравнение с эталоном</b>"),
+               InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.callback_query(F.data.startswith("tplra:"))
+async def cb_router_template_apply(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Применяю…")
+    rid = int(call.data.split(":")[1])
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Назад", f"rt:{rid}")])
+    try:
+        res = await api.apply_template(ADMIN_CODE, rid, dry_run=False)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {e.message}", back)
+        return
+    await edit(call.message, template_results_text(res.get("results") or [], "🗺 <b>Маршрутизация</b>"), back)
+
+
+# файл с именем эталона заменяет эталон
+@dp.message(F.document)
+async def on_template_file(message: Message, bot: Bot):
+    name = message.document.file_name or ""
+    if name not in TEMPLATE_FILES:
+        return
+    file = await bot.get_file(message.document.file_id)
+    data = await bot.download_file(file.file_path)
+    await drop(message)
+    try:
+        content = data.read().decode("utf-8")
+    except UnicodeDecodeError:
+        await show(message, "⚠️ Файл не в UTF-8", templates_keyboard())
+        return
+    try:
+        templates = await api.upload_template(ADMIN_CODE, name, content)
+    except APIError as e:
+        await show(message, f"⚠️ {html.escape(e.message)}", templates_keyboard())
+        return
+    await show(message, "✅ Эталон обновлён\n\n" + templates_text(templates), templates_keyboard())
 
 
 async def main():
