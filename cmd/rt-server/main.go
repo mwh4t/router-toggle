@@ -477,7 +477,7 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	h, err := router.CheckHealth(client, ctrl, s.cfg.PublicIP)
+	h, err := router.CheckHealth(client, ctrl, true)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, api.ErrInternal, err)
 		return
@@ -507,10 +507,10 @@ func healthChecks(h router.Health) []api.Check {
 
 	vps := api.Check{Name: "Связь с VPN", State: "ok"}
 	switch {
-	case !h.VPSKnown:
-		vps.State = "skip"
 	case !h.VPNOn:
 		vps.State = "off"
+	case !h.VPSKnown:
+		vps.State = "skip"
 	case !h.VPS:
 		vps.State, vps.Hint = "fail", "попробуйте перезагрузить роутер"
 	}

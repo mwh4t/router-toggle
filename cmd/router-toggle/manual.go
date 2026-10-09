@@ -264,7 +264,7 @@ func showDiff(client *sshconn.Client, ctrl router.Controller, value bool) bool {
 
 func manualCheck(client *sshconn.Client, ctrl router.Controller) {
 	fmt.Println("Проверяю...")
-	h, err := router.CheckHealth(client, ctrl, "")
+	h, err := router.CheckHealth(client, ctrl, false)
 	if err != nil {
 		report(err)
 		return

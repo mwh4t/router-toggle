@@ -57,3 +57,43 @@ func TestYesNoRejectsGarbage(t *testing.T) {
 		t.Fatal("ожидал ошибку на неизвестной команде")
 	}
 }
+
+// заглушка для проверки состояния
+type healthRunner struct {
+	vpnOn  bool
+	probed bool
+}
+
+func (h *healthRunner) Run(cmd string) (string, error) {
+	switch {
+	case strings.Contains(cmd, "rt-probe"):
+		h.probed = true
+		return "yes\n", nil
+	case strings.Contains(cmd, "xkeen_rule"):
+		if h.vpnOn {
+			return "yes\n", nil
+		}
+		return "no\n", nil
+	case strings.Contains(cmd, "ping"), strings.Contains(cmd, "pidof xray"):
+		return "yes\n", nil
+	}
+	return "", errors.New("unexpected: " + cmd)
+}
+
+func TestCheckHealthProbe(t *testing.T) {
+	r := &healthRunner{vpnOn: true}
+	h, err := CheckHealth(r, Keenetic{}, true)
+	if err != nil || !r.probed || !h.VPSKnown || !h.VPS {
+		t.Fatalf("канал при включённом vpn: %+v probed=%v err=%v", h, r.probed, err)
+	}
+
+	r = &healthRunner{vpnOn: false}
+	if h, err = CheckHealth(r, Keenetic{}, true); err != nil || r.probed || h.VPSKnown {
+		t.Fatalf("при выключенном vpn канал не проверяется: %+v probed=%v err=%v", h, r.probed, err)
+	}
+
+	r = &healthRunner{vpnOn: true}
+	if h, err = CheckHealth(r, Keenetic{}, false); err != nil || r.probed {
+		t.Fatalf("ручной режим без проверки канала: %+v probed=%v err=%v", h, r.probed, err)
+	}
+}

@@ -90,7 +90,6 @@ scp rt-server root@vps:/usr/local/bin/
   "db_path": "/etc/router-toggle/router-toggle.db",
   "server_key": "<openssl rand -hex 32>",
   "admin_code": "<16+ chars: A-Z without I/O, digits 2-9>",
-  "public_ip": "<this server's ip>",
   "telegram_token": "<admin bot token>",
   "telegram_chat_id": "<your chat id>"
 }

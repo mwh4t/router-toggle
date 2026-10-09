@@ -29,8 +29,6 @@ sh /root/rt-restore.sh /root/rt-backup-*.tar.gz
 
 ## 2. настройки нового сервера
 
-в `/etc/router-toggle/config.json` поменять `public_ip` на адрес нового сервера - иначе проверка связи с vpn будет искать соединение со старым
-
 в `/etc/nginx/nginx.conf` добавить блок для api - имя в карту `stream`, `upstream rtapi` на `127.0.0.1:8444` и `server` на `127.0.0.1:8444` с `proxy_pass` на `127.0.0.1:8080`
 
 ## 3. переключение

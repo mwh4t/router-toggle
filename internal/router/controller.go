@@ -54,6 +54,7 @@ type Controller interface {
 	VPNState(r Runner) (bool, error)
 	SetVPN(r Runner, on bool) error
 	ProxyRunning(r Runner) (bool, error)
+	VPNProbe(r Runner) (bool, error)
 	Reboot(r Runner) error
 
 	Firmware() string

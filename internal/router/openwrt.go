@@ -9,8 +9,9 @@ import (
 type OpenWrt struct{}
 
 const (
-	openwrtRCLocalPath = "/etc/rc.local"
-	openwrtUDPRange    = "27000-27100"
+	openwrtRCLocalPath    = "/etc/rc.local"
+	openwrtXrayConfigPath = "/etc/xray/config.yaml"
+	openwrtUDPRange       = "27000-27100"
 )
 
 var openwrtUDPLineRe = regexp.MustCompile(
@@ -101,6 +102,14 @@ func (OpenWrt) SetVPN(r Runner, on bool) error {
 
 func (OpenWrt) ProxyRunning(r Runner) (bool, error) {
 	return yesNo(r, "pidof xray >/dev/null && echo yes || echo no")
+}
+
+// подмена входов по тегу
+func (OpenWrt) VPNProbe(r Runner) (bool, error) {
+	dns := fmt.Sprintf(`{"tag":"dns-in","listen":"127.0.0.1","port":%d,"protocol":"dokodemo-door",`+
+		`"settings":{"address":"1.1.1.1","port":53,"network":"udp"}}`, probePort+1)
+	return yesNo(r, probeScript("XRAY_LOCATION_ASSET=/usr/share/xray ",
+		[]string{openwrtXrayConfigPath}, probeInbound("all-in"), dns))
 }
 
 func (OpenWrt) Reboot(r Runner) error {

@@ -39,8 +39,7 @@ type Health struct {
 	VPSKnown bool
 }
 
-// проверка соединения с vps пропускается
-func CheckHealth(r Runner, c Controller, vpsIP string) (Health, error) {
+func CheckHealth(r Runner, c Controller, probe bool) (Health, error) {
 	var h Health
 	var err error
 
@@ -53,11 +52,9 @@ func CheckHealth(r Runner, c Controller, vpsIP string) (Health, error) {
 	if h.Proxy, err = c.ProxyRunning(r); err != nil {
 		return h, err
 	}
-	if vpsIP != "" {
+	if probe && h.VPNOn {
 		h.VPSKnown = true
-		cmd := fmt.Sprintf("netstat -tn 2>/dev/null | grep ESTABLISHED | grep -q %s && echo yes || echo no",
-			shq(vpsIP+":443"))
-		if h.VPS, err = yesNo(r, cmd); err != nil {
+		if h.VPS, err = c.VPNProbe(r); err != nil {
 			return h, err
 		}
 	}

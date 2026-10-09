@@ -29,11 +29,11 @@ type AddRouterRequest struct {
 	Code        string `json:"code"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
-	Firmware   string `json:"firmware"`
-	TunnelPort int    `json:"tunnel_port"`
-	SSHUser    string `json:"ssh_user"`
-	AuthType   string `json:"auth_type"`
-	AuthSecret string `json:"auth_secret"`
+	Firmware    string `json:"firmware"`
+	TunnelPort  int    `json:"tunnel_port"`
+	SSHUser     string `json:"ssh_user"`
+	AuthType    string `json:"auth_type"`
+	AuthSecret  string `json:"auth_secret"`
 }
 
 type RouterCodeResponse struct {

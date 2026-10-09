@@ -4,7 +4,6 @@
   "geosite_path": "/etc/router-toggle/dlc.dat",
   "server_key": "openssl rand -hex 32",
   "admin_code": "от 16 символов из A-Z без I и O и цифр 2-9",
-  "public_ip": "публичный ip этого сервера",
   "telegram_token": "токен админского бота",
   "telegram_chat_id": "chat_id"
 }

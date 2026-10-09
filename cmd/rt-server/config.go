@@ -17,7 +17,6 @@ type Config struct {
 	DBPath      string `json:"db_path"`
 	ServerKey   string `json:"server_key"` // hex
 	AdminCode   string `json:"admin_code"`
-	PublicIP    string `json:"public_ip"` // проверка соединения с vps
 	GeositePath string `json:"geosite_path"`
 
 	TelegramToken  string `json:"telegram_token"`

@@ -519,11 +519,11 @@ async def add_password(message: Message, state: FSMContext, bot: Bot):
         await show(message, f"⚠️ {e.message}", reply_markup=await routers_keyboard())
         return
 
-    await show(message, 
-        f"✅ <b>{res['router']['name']}</b> заведён\n\n"
-        f"Код доступа: <code>{res['access_code']}</code>",
-        reply_markup=await routers_keyboard(),
-    )
+    await show(message,
+               f"✅ <b>{res['router']['name']}</b> заведён\n\n"
+               f"Код доступа: <code>{res['access_code']}</code>",
+               reply_markup=await routers_keyboard(),
+               )
 
 
 async def main():

@@ -10,8 +10,9 @@ import (
 type Keenetic struct{}
 
 const (
-	keeneticPortListPath = "/opt/etc/xkeen/port_proxying.lst"
-	keeneticRoutingPath  = "/opt/etc/xray/configs/05_routing.json"
+	keeneticPortListPath  = "/opt/etc/xkeen/port_proxying.lst"
+	keeneticRoutingPath   = "/opt/etc/xray/configs/05_routing.json"
+	keeneticOutboundsPath = "/opt/etc/xray/configs/04_outbounds.json"
 
 	keeneticUDPRangeColon = "27000:27100" // формат port_proxying.lst
 	keeneticUDPRangeDash  = "27000-27100" // формат 05_routing.json
@@ -140,6 +141,11 @@ func (Keenetic) SetVPN(r Runner, on bool) error {
 
 func (Keenetic) ProxyRunning(r Runner) (bool, error) {
 	return yesNo(r, "pidof xray >/dev/null && echo yes || echo no")
+}
+
+// первый исходящий
+func (Keenetic) VPNProbe(r Runner) (bool, error) {
+	return yesNo(r, probeScript("", []string{keeneticOutboundsPath}, probeInbound("rt-probe")))
 }
 
 func (Keenetic) Reboot(r Runner) error {
