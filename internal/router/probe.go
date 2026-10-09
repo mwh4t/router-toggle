@@ -9,6 +9,7 @@ import (
 const (
 	probePort = 10891
 	probeFile = "/tmp/rt-probe.json"
+	probeOut  = "/tmp/rt-probe.out"
 	probeHost = "cp.cloudflare.com"
 )
 
@@ -36,8 +37,10 @@ func probeScript(env string, configs []string, inbounds ...string) string {
 		"i=0; while [ $i -lt 6 ] && ! grep -q " + shq(listen) + " /proc/net/tcp; do sleep 1; i=$((i+1)); done",
 		"if command -v curl >/dev/null 2>&1; then" +
 			" c=$(curl -s -o /dev/null -m 8 -w '%{http_code}' -H " + shq("Host: "+probeHost) + " " + url + " 2>/dev/null);" +
-			" else c=$(printf " + shq(req) + fmt.Sprintf(" | nc -w 8 127.0.0.1 %d 2>/dev/null | head -1 | cut -d' ' -f2); fi", probePort),
-		"kill $P 2>/dev/null; rm -f " + probeFile,
+			" else printf " + shq(req) + fmt.Sprintf(" | nc 127.0.0.1 %d > %s 2>/dev/null & N=$!;", probePort, probeOut) +
+			" i=0; while [ $i -lt 8 ] && kill -0 $N 2>/dev/null; do sleep 1; i=$((i+1)); done;" +
+			" kill $N 2>/dev/null; c=$(head -1 " + probeOut + " | cut -d' ' -f2); fi",
+		"kill $P 2>/dev/null; rm -f " + probeFile + " " + probeOut,
 		`case "$c" in [1-5][0-9][0-9]) echo yes ;; *) echo no ;; esac`,
 	}, "\n")
 }
