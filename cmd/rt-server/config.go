@@ -20,6 +20,7 @@ type Config struct {
 	GeositePath string `json:"geosite_path"`
 
 	TemplatesDir string `json:"templates_dir"` // эталоны маршрутизации
+	HostsMark    string `json:"hosts_mark"`    // хосты панели для роутеров
 
 	TelegramToken  string `json:"telegram_token"`
 	TelegramChatID string `json:"telegram_chat_id"`
@@ -42,6 +43,9 @@ func LoadConfig(path string) (*Config, []byte, error) {
 	}
 	if c.TemplatesDir == "" {
 		c.TemplatesDir = "/etc/router-toggle/templates"
+	}
+	if c.HostsMark == "" {
+		c.HostsMark = "· Роутер"
 	}
 	if c.DBPath == "" {
 		c.DBPath = "/etc/router-toggle/router-toggle.db"

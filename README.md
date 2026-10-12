@@ -135,7 +135,9 @@ user-added sites live in a dedicated place and never touch hand-written config:
 - **keenetic** - a separate routing rule with `"ruleTag": "added-by-user"`
 - **openwrt** - a `# added by user` section, which must stay last in `/etc/dnsmasq.servers`
 
-nodes from a subscription replace the single `vless-reality` (keenetic) or `proxy` (openwrt) outbound with `node-*` outbounds, a `leastPing` balancer under the same tag and a `burstObservatory` pinging every node through `cp.cloudflare.com`. a dead node drops out in about two minutes, open connections stay where they are
+nodes from a subscription replace the single `vless-reality` (keenetic) or `proxy` (openwrt) outbound with `node-*` outbounds and a balancer under the same tag. the server fetches the owner's subscription as a separate device (`x-hwid`) and keeps only hosts whose name contains `hosts_mark` (`· Роутер` by default), or all of them if none match
+
+the balancer holds one primary node and falls back to the next one when the `burstObservatory` sees no answer from the primary for about half a minute. open connections stay where they are, so a game or a call is not moved to another country while the primary is alive. once a week the nightly sync downloads 10 MB through each node from the router itself and switches the primary only if another node is at least 30% faster
 </details>
 
 <details>

@@ -2,8 +2,11 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -23,6 +26,13 @@ type Router struct {
 	HostKey     string
 	SubURL      string
 	NodesHash   string // ноды на роутере
+
+	Owner  string  // uuid учётки в панели
+	Access []int64 // telegram id
+
+	Primary    string
+	Speeds     map[string]float64 // мбит/с
+	MeasuredAt time.Time
 }
 
 type Store struct {
@@ -79,7 +89,8 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-var addedColumns = []string{"display_name", "sub_url", "nodes_hash"}
+var addedColumns = []string{"display_name", "sub_url", "nodes_hash",
+	"owner", "access", "primary_tag", "speeds", "measured_at"}
 
 func migrate(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(routers)`)
@@ -138,13 +149,56 @@ func (s *Store) Router(id int) (Router, error) {
 }
 
 const routerColumns = `id, name, display_name, firmware, tunnel_port, ssh_user,
-	auth_type, auth_secret, host_key, sub_url, nodes_hash`
+	auth_type, auth_secret, host_key, sub_url, nodes_hash,
+	owner, access, primary_tag, speeds, measured_at`
 
 func scanRouter(row interface{ Scan(...any) error }) (Router, error) {
 	var r Router
+	var access, speeds, measured string
 	err := row.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
-		&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey, &r.SubURL, &r.NodesHash)
-	return r, err
+		&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey, &r.SubURL, &r.NodesHash,
+		&r.Owner, &access, &r.Primary, &speeds, &measured)
+	if err != nil {
+		return r, err
+	}
+	for _, f := range strings.Split(access, ",") {
+		if id, err := strconv.ParseInt(f, 10, 64); err == nil {
+			r.Access = append(r.Access, id)
+		}
+	}
+	if speeds != "" {
+		_ = json.Unmarshal([]byte(speeds), &r.Speeds)
+	}
+	r.MeasuredAt, _ = time.Parse(time.RFC3339, measured)
+	return r, nil
+}
+
+func (s *Store) SetOwner(id int, owner string, access []int64) error {
+	ids := make([]string, len(access))
+	for i, a := range access {
+		ids[i] = strconv.FormatInt(a, 10)
+	}
+	res, err := s.db.Exec(`UPDATE routers SET owner = ?, access = ? WHERE id = ?`,
+		owner, strings.Join(ids, ","), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SetPrimary(id int, primary string) error {
+	_, err := s.db.Exec(`UPDATE routers SET primary_tag = ? WHERE id = ?`, primary, id)
+	return err
+}
+
+func (s *Store) SetSpeeds(id int, speeds map[string]float64) error {
+	b, _ := json.Marshal(speeds)
+	_, err := s.db.Exec(`UPDATE routers SET speeds = ?, measured_at = ? WHERE id = ?`,
+		string(b), time.Now().UTC().Format(time.RFC3339), id)
+	return err
 }
 
 func (s *Store) SetSubURL(id int, url string) error {

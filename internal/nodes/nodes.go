@@ -21,8 +21,8 @@ const TagPrefix = "node-"
 
 var Ping = PingConfig{
 	Destination: "http://cp.cloudflare.com/generate_204",
-	Interval:    "30s",
-	Sampling:    4,
+	Interval:    "10s",
+	Sampling:    3,
 	Timeout:     "5s",
 }
 
@@ -53,6 +53,14 @@ type Node struct {
 type Set struct {
 	Nodes   []Node
 	Skipped []string // не vless reality xhttp
+	Primary string
+}
+
+// как подписка представляется панели
+type Device struct {
+	HWID  string
+	OS    string
+	Model string
 }
 
 var (
@@ -62,7 +70,7 @@ var (
 
 const maxBody = 1 << 20
 
-func Fetch(subURL string) (Set, error) {
+func Fetch(subURL string, dev Device) (Set, error) {
 	u, err := url.Parse(subURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return Set{}, fmt.Errorf("ссылка на подписку должна начинаться с https://")
@@ -72,12 +80,20 @@ func Fetch(subURL string) (Set, error) {
 		return Set{}, err
 	}
 	req.Header.Set("User-Agent", "rt-server")
+	if dev.HWID != "" {
+		req.Header.Set("X-Hwid", dev.HWID)
+		req.Header.Set("X-Device-Os", dev.OS)
+		req.Header.Set("X-Device-Model", dev.Model)
+	}
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return Set{}, fmt.Errorf("подписка недоступна: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return Set{}, fmt.Errorf("подписка ответила 404, ссылка устарела или у владельца кончились устройства")
+	}
 	if resp.StatusCode != http.StatusOK {
 		return Set{}, fmt.Errorf("подписка ответила %d", resp.StatusCode)
 	}
@@ -197,6 +213,56 @@ func linkName(link string) string {
 	return "без имени"
 }
 
+// только хосты с меткой, если они есть
+func (s Set) Only(mark string) Set {
+	if mark == "" {
+		return s
+	}
+	var keep []Node
+	for _, n := range s.Nodes {
+		if strings.Contains(n.Name, mark) {
+			keep = append(keep, n)
+		}
+	}
+	if len(keep) == 0 {
+		return s
+	}
+	out := s
+	out.Nodes = keep
+	for _, n := range s.Nodes {
+		if !strings.Contains(n.Name, mark) {
+			out.Skipped = append(out.Skipped, n.Name)
+		}
+	}
+	return out
+}
+
+func (s Set) Has(tag string) bool {
+	for _, n := range s.Nodes {
+		if n.Tag == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func (s Set) Main() string {
+	if s.Has(s.Primary) {
+		return s.Primary
+	}
+	return s.Nodes[0].Tag
+}
+
+func (s Set) Backup() string {
+	main := s.Main()
+	for _, n := range s.Nodes {
+		if n.Tag != main {
+			return n.Tag
+		}
+	}
+	return main
+}
+
 func (s Set) Tags() []string {
 	out := make([]string, len(s.Nodes))
 	for i, n := range s.Nodes {
@@ -220,6 +286,7 @@ func (s Set) Hash() string {
 		h.Write(b)
 		h.Write([]byte{'\n'})
 	}
+	h.Write([]byte("main " + s.Main()))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
@@ -316,8 +383,9 @@ type Observatory struct {
 	PingConfig      PingConfig `json:"pingConfig"`
 }
 
-func NewObservatory() Observatory {
-	return Observatory{SubjectSelector: []string{TagPrefix}, PingConfig: Ping}
+// проверяется только основная
+func (s Set) Observatory() Observatory {
+	return Observatory{SubjectSelector: []string{s.Main()}, PingConfig: Ping}
 }
 
 type Balancer struct {
@@ -331,12 +399,12 @@ type strategy struct {
 	Type string `json:"type"`
 }
 
-// до первых замеров первая нода
+// основная, пока жива, иначе запасная
 func (s Set) Balancer(tag string) Balancer {
 	return Balancer{
 		Tag:         tag,
-		Selector:    []string{TagPrefix},
-		FallbackTag: s.Nodes[0].Tag,
+		Selector:    []string{s.Main()},
+		FallbackTag: s.Backup(),
 		Strategy:    strategy{Type: "leastPing"},
 	}
 }

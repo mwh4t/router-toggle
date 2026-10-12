@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -105,6 +107,7 @@ func main() {
 	mux.HandleFunc("/v1/templates/apply", s.handleTemplateApply)
 	mux.HandleFunc("/v1/routers/sub", s.handleRouterSub)
 	mux.HandleFunc("/v1/sync", s.handleSync)
+	mux.HandleFunc("/v1/routers/owner", s.handleRouterOwner)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -718,7 +721,13 @@ func stateResponse(info api.RouterInfo, op string, value bool, readAt time.Time,
 // клиенту не видно внутреннее имя
 func routerInfo(rc store.Router, a actor) api.RouterInfo {
 	if a.admin {
-		return api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware, DisplayName: rc.DisplayName}
+		info := api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware, DisplayName: rc.DisplayName,
+			Owner: rc.Owner, Access: rc.Access, Primary: strings.TrimPrefix(rc.Primary, nodes.TagPrefix)}
+		if rc.SubURL != "" {
+			sum := sha256.Sum256([]byte(rc.SubURL))
+			info.SubHash = hex.EncodeToString(sum[:])[:16]
+		}
+		return info
 	}
 	name := rc.DisplayName
 	if name == "" {

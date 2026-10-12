@@ -646,6 +646,7 @@ def sub_keyboard(rid: int, res: dict | None) -> InlineKeyboardMarkup:
     rows = []
     if res and res["status"] == "changes":
         rows.append(button("✅ Применить", f"subap:{rid}"))
+    rows.append(button("📏 Замерить ноды", f"subm:{rid}"))
     rows.append(button("🔗 Сменить подписку", f"subset:{rid}"))
     rows.append(button("← Назад", f"rt:{rid}"))
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -674,6 +675,20 @@ async def cb_sub(call: CallbackQuery, state: FSMContext):
     await show_sub(call.message, rid, (res.get("results") or [{}])[0])
 
 
+@dp.callback_query(F.data.startswith("subm:"))
+async def cb_sub_measure(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Замеряю через роутер, это около минуты…")
+    rid = int(call.data.split(":")[1])
+    try:
+        res = await api.sync(ADMIN_CODE, rid, dry_run=True, measure=True)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {html.escape(e.message)}", sub_keyboard(rid, None))
+        return
+    await show_sub(call.message, rid, (res.get("results") or [{}])[0])
+
+
 @dp.callback_query(F.data.startswith("subap:"))
 async def cb_sub_apply(call: CallbackQuery):
     if not allowed(call.from_user.id):
@@ -696,7 +711,7 @@ async def cb_sub_set(call: CallbackQuery, state: FSMContext):
     rid = int(call.data.split(":")[1])
     await state.set_state(SubForm.url)
     await state.update_data(rid=rid)
-    await edit(call.message, "🔗 Пришлите ссылку на подписку учётки этого роутера из панели. Сообщение удалю сразу.",
+    await edit(call.message, "🔗 Пришлите ссылку на подписку владельца роутера. Сообщение удалю сразу.",
                InlineKeyboardMarkup(inline_keyboard=[button("✖️ Отмена", f"sub:{rid}")]))
 
 

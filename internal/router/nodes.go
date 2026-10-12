@@ -17,6 +17,7 @@ type NodesController interface {
 	PlanNodes(r Runner, set nodes.Set) (*Plan, error)
 	RestartProxy(r Runner) error
 	NodeProbe(r Runner, tag string) (bool, error)
+	NodeSpeed(r Runner, tag string) (float64, error)
 }
 
 func AsNodes(c Controller) (NodesController, error) {
@@ -244,7 +245,7 @@ func keeneticWithNodes(text string, set nodes.Set) (string, error) {
 	}
 
 	top["outbounds"] = json.RawMessage(nodes.Compact(items))
-	top["burstObservatory"] = json.RawMessage(nodes.Compact(nodes.NewObservatory()))
+	top["burstObservatory"] = json.RawMessage(nodes.Compact(set.Observatory()))
 	keys := []string{"outbounds", "burstObservatory"}
 	var rest []string
 	for k := range top {
@@ -321,6 +322,14 @@ func keeneticCheckBalancer(content, balancers string) error {
 }
 
 func (k Keenetic) RestartProxy(r Runner) error { return k.Restart(r) }
+
+func (Keenetic) NodeSpeed(r Runner, tag string) (float64, error) {
+	if !nodeTagRe.MatchString(tag) {
+		return 0, fmt.Errorf("недопустимый тег %q", tag)
+	}
+	return speedOf(r, speedScript("", []string{keeneticOutboundsPath},
+		probeConfig([]string{probeInboundTo("rt-probe", speedHost)}, "rt-probe", tag)))
+}
 
 func (Keenetic) NodeProbe(r Runner, tag string) (bool, error) {
 	if !nodeTagRe.MatchString(tag) {
@@ -561,7 +570,7 @@ func openwrtWithNodes(text string, set nodes.Set) (string, error) {
 	if _, _, block := yamlSection(lines, "burstObservatory"); block {
 		return fail("burstObservatory записан не одной строкой")
 	}
-	obs := "burstObservatory: " + nodes.Compact(nodes.NewObservatory())
+	obs := "burstObservatory: " + nodes.Compact(set.Observatory())
 	replaced := false
 	for i, l := range lines {
 		if strings.HasPrefix(l, "burstObservatory:") {
@@ -580,6 +589,14 @@ func (OpenWrt) RestartProxy(r Runner) error {
 		return fmt.Errorf("перезапуск xray: %w (%s)", err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+func (OpenWrt) NodeSpeed(r Runner, tag string) (float64, error) {
+	if !nodeTagRe.MatchString(tag) {
+		return 0, fmt.Errorf("недопустимый тег %q", tag)
+	}
+	return speedOf(r, speedScript("XRAY_LOCATION_ASSET=/usr/share/xray ", []string{openwrtXrayConfigPath},
+		probeConfig([]string{probeInboundTo("all-in", speedHost), openwrtProbeDNS()}, "all-in", tag)))
 }
 
 func (OpenWrt) NodeProbe(r Runner, tag string) (bool, error) {

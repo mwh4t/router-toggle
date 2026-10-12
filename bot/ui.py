@@ -154,5 +154,11 @@ def sub_text(r: dict) -> str:
         lines.append(f"🔗 {html.escape(r['sub'])}")
     if r.get("nodes"):
         lines.append("Ноды: " + html.escape(", ".join(r["nodes"])))
+    if r.get("primary"):
+        lines.append("Основная: " + html.escape(r["primary"]) + (" (сменится)" if r.get("switched") else ""))
+    if r.get("speeds"):
+        lines.append("Замер: " + ", ".join(f"{html.escape(t)} {v:.0f}" for t, v in sorted(r["speeds"].items())) + " Мбит/с")
     lines += ["", sync_line(r)]
+    if r.get("message") and r["status"] not in ("sub_error", "error"):
+        lines.append(html.escape(r["message"]))
     return "\n".join(lines)

@@ -80,7 +80,43 @@ func TestHashStable(t *testing.T) {
 	if a.Hash() != b.Hash() || a.Hash() == c.Hash() {
 		t.Fatal("хеш должен зависеть от нод и порядка")
 	}
-	if bal := Compact(a.Balancer("proxy")); bal != `{"tag":"proxy","selector":["node-"],"fallbackTag":"node-fi1","strategy":{"type":"leastPing"}}` {
+	if bal := Compact(a.Balancer("proxy")); bal != `{"tag":"proxy","selector":["node-fi1"],"fallbackTag":"node-se1","strategy":{"type":"leastPing"}}` {
 		t.Fatal(bal)
+	}
+}
+
+func TestPrimary(t *testing.T) {
+	a, _ := Parse(encode(linkFI, linkSE))
+	before := a.Hash()
+	a.Primary = "node-se1"
+	if bal := Compact(a.Balancer("proxy")); bal != `{"tag":"proxy","selector":["node-se1"],"fallbackTag":"node-fi1","strategy":{"type":"leastPing"}}` {
+		t.Fatal(bal)
+	}
+	if obs := a.Observatory(); len(obs.SubjectSelector) != 1 || obs.SubjectSelector[0] != "node-se1" {
+		t.Fatal(obs)
+	}
+	if a.Hash() == before {
+		t.Fatal("хеш должен зависеть от основной ноды")
+	}
+	a.Primary = "node-gone"
+	if a.Main() != "node-fi1" {
+		t.Fatal("пропавшая основная должна смениться на первую")
+	}
+	one, _ := Parse(encode(linkFI))
+	if one.Main() != "node-fi1" || one.Backup() != "node-fi1" {
+		t.Fatal("одна нода сама себе запасная")
+	}
+}
+
+func TestOnly(t *testing.T) {
+	home := strings.Replace(linkSE, "#SE", "#%F0%9F%87%B8%F0%9F%87%AA%20%D0%A8%D0%B2%D0%B5%D1%86%D0%B8%D1%8F%20%C2%B7%20%D0%A0%D0%BE%D1%83%D1%82%D0%B5%D1%80", 1)
+	set, _ := Parse(encode(linkFI, home))
+	got := set.Only("· Роутер")
+	if strings.Join(got.Tags(), ",") != "node-se1" || len(got.Skipped) != 1 {
+		t.Fatalf("%v %v", got.Tags(), got.Skipped)
+	}
+	plain, _ := Parse(encode(linkFI, linkSE))
+	if len(plain.Only("· Роутер").Nodes) != 2 {
+		t.Fatal("без меченых хостов берутся все")
 	}
 }

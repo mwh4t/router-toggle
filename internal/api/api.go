@@ -106,6 +106,18 @@ type RouterInfo struct {
 	Name        string `json:"name"`
 	Firmware    string `json:"firmware"`
 	DisplayName string `json:"display_name,omitempty"` // только админу
+
+	Owner   string  `json:"owner,omitempty"`
+	Access  []int64 `json:"access,omitempty"`
+	SubHash string  `json:"sub_hash,omitempty"` // сверка без самой ссылки
+	Primary string  `json:"primary,omitempty"`
+}
+
+type OwnerRequest struct {
+	Code     string  `json:"code"`
+	RouterID int     `json:"router_id"`
+	Owner    string  `json:"owner"`
+	Access   []int64 `json:"access"`
 }
 
 type OpState struct {
@@ -193,6 +205,7 @@ type SyncRequest struct {
 	Code     string `json:"code"`
 	RouterID int    `json:"router_id,omitempty"`
 	DryRun   bool   `json:"dry_run"`
+	Measure  bool   `json:"measure,omitempty"`
 }
 
 // same, changes, applied, offline, busy, no_sub, sub_error или error
@@ -203,8 +216,12 @@ type SyncResult struct {
 	Nodes   []string   `json:"nodes,omitempty"`
 	Added   []string   `json:"added,omitempty"`
 	Removed []string   `json:"removed,omitempty"`
-	First   bool       `json:"first,omitempty"` // первый переход на ноды
+	First   bool       `json:"first,omitempty"`
 	Message string     `json:"message,omitempty"`
+
+	Primary  string             `json:"primary,omitempty"`
+	Switched bool               `json:"switched,omitempty"`
+	Speeds   map[string]float64 `json:"speeds,omitempty"`
 }
 
 type SyncResponse struct {

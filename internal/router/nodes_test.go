@@ -211,14 +211,14 @@ func TestOpenWrtNodes(t *testing.T) {
 	}
 	got := r.files[openwrtXrayConfigPath]
 	want := []string{
-		"routing:\n  balancers: [{\"tag\":\"proxy\",\"selector\":[\"node-\"],\"fallbackTag\":\"node-fi1\"",
+		"routing:\n  balancers: [{\"tag\":\"proxy\",\"selector\":[\"node-fi1\"],\"fallbackTag\":\"node-se1\"",
 		"      balancerTag: proxy\n",
 		"      outboundTag: dns-out\n",
 		"  - protocol: dns\n    tag: dns-out\n",
 		"  - {\"tag\":\"node-fi1\",",
 		"\"sockopt\":{\"mark\":2}",
 		"dns:\n  servers:\n",
-		"\nburstObservatory: {\"subjectSelector\":[\"node-\"]",
+		"\nburstObservatory: {\"subjectSelector\":[\"node-fi1\"]",
 	}
 	for _, w := range want {
 		if !strings.Contains(got, w) {
@@ -276,3 +276,23 @@ func TestTemplateWithNodesRejected(t *testing.T) {
 		t.Fatalf("эталон с нодами принят: %v", err)
 	}
 }
+
+func TestSpeedOf(t *testing.T) {
+	cases := map[string]float64{"10485760 100.50 102.50": 41.94304, "0 1.0 2.0": 0, "": -1}
+	for out, want := range cases {
+		got, err := speedOf(scriptRunner{out}, "x")
+		if want < 0 {
+			if err == nil {
+				t.Fatal("пустой ответ должен быть ошибкой")
+			}
+			continue
+		}
+		if err != nil || got < want-0.01 || got > want+0.01 {
+			t.Fatalf("%q: %v %v", out, got, err)
+		}
+	}
+}
+
+type scriptRunner struct{ out string }
+
+func (s scriptRunner) Run(string) (string, error) { return s.out, nil }
