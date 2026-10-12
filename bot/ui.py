@@ -113,3 +113,46 @@ def template_results_text(results: list[dict], title: str) -> str:
             line += f" · {html.escape(r.get('message', ''))}"
         lines.append(line)
     return "\n".join(lines)
+
+
+SYNC_MARKS = {"same": "➖", "changes": "📝", "applied": "✅", "offline": "📴", "busy": "⏳",
+              "no_sub": "❔", "sub_error": "🟠", "error": "🔴"}
+
+
+def sync_changes(r: dict) -> str:
+    if r.get("first"):
+        return "переход на ноды: " + ", ".join(r.get("added") or [])
+    parts = [f"+{t}" for t in r.get("added") or []] + [f"−{t}" for t in r.get("removed") or []]
+    return " ".join(parts) or "обновлены параметры нод"
+
+
+def sync_line(r: dict) -> str:
+    status = r["status"]
+    line = f"{SYNC_MARKS.get(status, '❔')} {html.escape(r['router']['name'])}"
+    if status in ("changes", "applied"):
+        line += " · " + sync_changes(r)
+    elif status == "same":
+        line += " · на роутере то же, что в подписке"
+    elif status == "offline":
+        line += " · не на связи"
+    elif status == "busy":
+        line += " · занят"
+    elif status == "no_sub":
+        line += " · подписка не задана"
+    elif status in ("sub_error", "error"):
+        line += f" · {html.escape(r.get('message', ''))}"
+    return line
+
+
+def sync_results_text(results: list[dict], title: str) -> str:
+    return "\n".join([title, ""] + [sync_line(r) for r in results])
+
+
+def sub_text(r: dict) -> str:
+    lines = [f"🛰 <b>{html.escape(r['router']['name'])}</b> · подписка", ""]
+    if r.get("sub"):
+        lines.append(f"🔗 {html.escape(r['sub'])}")
+    if r.get("nodes"):
+        lines.append("Ноды: " + html.escape(", ".join(r["nodes"])))
+    lines += ["", sync_line(r)]
+    return "\n".join(lines)

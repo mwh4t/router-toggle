@@ -62,6 +62,12 @@ class API:
     async def apply_template(self, code: str, router_id: int = 0, dry_run: bool = True) -> dict:
         return await self._post(code, "/v1/templates/apply", {"router_id": router_id, "dry_run": dry_run})
 
+    async def set_sub(self, code: str, router_id: int, url: str) -> dict:
+        return await self._post(code, "/v1/routers/sub", {"router_id": router_id, "url": url})
+
+    async def sync(self, code: str, router_id: int = 0, dry_run: bool = True) -> dict:
+        return await self._post(code, "/v1/sync", {"router_id": router_id, "dry_run": dry_run})
+
     async def log(self, code: str, limit: int = 20) -> list[dict]:
         data = await self._post(code, "/v1/log", {"limit": limit})
         return data.get("entries") or []

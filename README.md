@@ -28,6 +28,7 @@ clients never see router credentials - only a personal access code that opens ex
 - **sites via vpn** - add any [v2fly](https://github.com/v2fly/domain-list-community) service by name, or a single domain
 - **health check** - router, internet, proxy service and vpn link at a glance
 - **reboot** - with confirmation and a cooldown
+- **nodes from a subscription** (admin bot) - each router gets the link of its own panel account; the server takes the vless reality xhttp nodes from it, and xray on the router picks the live one with the lowest ping by itself. checked every night and on demand, the router is touched only when the nodes changed
 - **routing templates** (admin bot) - send `dnsmasq.servers` or `05_routing.json` to the bot, compare with every router and roll it out to one or all of them; sites added by clients and the game ports state are kept
 - **manual mode** - direct ssh to your own router, no server involved
 
@@ -96,7 +97,7 @@ scp rt-server root@vps:/usr/local/bin/
 }
 ```
 
-runs as a systemd service. `dlc.dat` is downloaded on first start and refreshed every sunday at 06:10
+runs as a systemd service. `dlc.dat` is downloaded on first start and refreshed every sunday at 06:10, router subscriptions are checked every day at 06:30
 </details>
 
 <details>
@@ -133,6 +134,8 @@ user-added sites live in a dedicated place and never touch hand-written config:
 
 - **keenetic** - a separate routing rule with `"ruleTag": "added-by-user"`
 - **openwrt** - a `# added by user` section, which must stay last in `/etc/dnsmasq.servers`
+
+nodes from a subscription replace the single `vless-reality` (keenetic) or `proxy` (openwrt) outbound with `node-*` outbounds, a `leastPing` balancer under the same tag and a `burstObservatory` pinging every node through `cp.cloudflare.com`. a dead node drops out in about two minutes, open connections stay where they are
 </details>
 
 <details>
@@ -165,6 +168,7 @@ make release   # clients for all platforms + checksums, version from the git tag
 cmd/rt-server        api server
 cmd/router-toggle    cli client
 internal/router      firmware controllers and apply protocol
+internal/nodes       subscription links to xray outbounds
 internal/geosite     v2fly dlc.dat reader
 internal/sshconn     ssh with host key pinning
 bot/                 admin telegram bot

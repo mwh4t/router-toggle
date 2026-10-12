@@ -37,6 +37,7 @@ type Health struct {
 	Proxy    bool
 	VPS      bool
 	VPSKnown bool
+	Nodes    []NodeState
 }
 
 func CheckHealth(r Runner, c Controller, probe bool) (Health, error) {
@@ -52,16 +53,32 @@ func CheckHealth(r Runner, c Controller, probe bool) (Health, error) {
 	if h.Proxy, err = c.ProxyRunning(r); err != nil {
 		return h, err
 	}
-	if probe && h.VPNOn {
-		h.VPSKnown = true
-		if h.VPS, err = c.VPNProbe(r); err != nil {
-			return h, err
+	if !probe || !h.VPNOn {
+		return h, nil
+	}
+	h.VPSKnown = true
+	nc, err := AsNodes(c)
+	var tags []string
+	if err == nil {
+		tags, _ = nc.NodeTags(r)
+	}
+	if len(tags) > 0 {
+		for _, tag := range tags {
+			ok, err := nc.NodeProbe(r, tag)
+			if err != nil {
+				return h, err
+			}
+			h.Nodes = append(h.Nodes, NodeState{Tag: tag, OK: ok})
+			h.VPS = h.VPS || ok
 		}
+		return h, nil
+	}
+	if h.VPS, err = c.VPNProbe(r); err != nil {
+		return h, err
 	}
 	return h, nil
 }
 
-// команда обязана печатать yes или no
 func yesNo(r Runner, cmd string) (bool, error) {
 	out, err := r.Run(cmd)
 	if err != nil {

@@ -106,10 +106,14 @@ func (OpenWrt) ProxyRunning(r Runner) (bool, error) {
 
 // подмена входов по тегу
 func (OpenWrt) VPNProbe(r Runner) (bool, error) {
-	dns := fmt.Sprintf(`{"tag":"dns-in","listen":"127.0.0.1","port":%d,"protocol":"dokodemo-door",`+
+	return yesNo(r, probeScript("XRAY_LOCATION_ASSET=/usr/share/xray ", []string{openwrtXrayConfigPath},
+		probeConfig([]string{probeInbound("all-in"), openwrtProbeDNS()}, "", "")))
+}
+
+// замена dns-in
+func openwrtProbeDNS() string {
+	return fmt.Sprintf(`{"tag":"dns-in","listen":"127.0.0.1","port":%d,"protocol":"dokodemo-door",`+
 		`"settings":{"address":"1.1.1.1","port":53,"network":"udp"}}`, probePort+1)
-	return yesNo(r, probeScript("XRAY_LOCATION_ASSET=/usr/share/xray ",
-		[]string{openwrtXrayConfigPath}, probeInbound("all-in"), dns))
 }
 
 func (OpenWrt) Reboot(r Runner) error {

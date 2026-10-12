@@ -18,9 +18,16 @@ func probeInbound(tag string) string {
 		`"settings":{"address":%q,"port":80,"network":"tcp"}}`, tag, probePort, probeHost)
 }
 
+func probeConfig(inbounds []string, in, out string) string {
+	cfg := `{"log":{"loglevel":"none"},"inbounds":[` + strings.Join(inbounds, ",") + `]`
+	if out != "" {
+		cfg += fmt.Sprintf(`,"routing":{"rules":[{"type":"field","inboundTag":[%q],"outboundTag":%q}]}`, in, out)
+	}
+	return cfg + "}"
+}
+
 // временный xray с исходящим роутера
-func probeScript(env string, configs []string, inbounds ...string) string {
-	cfg := `{"log":{"loglevel":"none"},"inbounds":[` + strings.Join(inbounds, ",") + `]}`
+func probeScript(env string, configs []string, cfg string) string {
 	var args strings.Builder
 	for _, c := range configs {
 		args.WriteString(" -c " + shq(c))

@@ -182,6 +182,36 @@ type TemplateApplyResponse struct {
 	Started bool             `json:"started,omitempty"`
 }
 
+// подписка роутера
+type SubRequest struct {
+	Code     string `json:"code"`
+	RouterID int    `json:"router_id"`
+	URL      string `json:"url"`
+}
+
+type SyncRequest struct {
+	Code     string `json:"code"`
+	RouterID int    `json:"router_id,omitempty"`
+	DryRun   bool   `json:"dry_run"`
+}
+
+// same, changes, applied, offline, busy, no_sub, sub_error или error
+type SyncResult struct {
+	Router  RouterInfo `json:"router"`
+	Status  string     `json:"status"`
+	Sub     string     `json:"sub,omitempty"`
+	Nodes   []string   `json:"nodes,omitempty"`
+	Added   []string   `json:"added,omitempty"`
+	Removed []string   `json:"removed,omitempty"`
+	First   bool       `json:"first,omitempty"` // первый переход на ноды
+	Message string     `json:"message,omitempty"`
+}
+
+type SyncResponse struct {
+	Results []SyncResult `json:"results,omitempty"`
+	Started bool         `json:"started,omitempty"`
+}
+
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -205,6 +235,7 @@ const (
 	ErrDomainExists    = "E-21"
 	ErrDomainInvalid   = "E-22"
 	ErrTemplateInvalid = "E-23"
+	ErrSubInvalid      = "E-24"
 	ErrInternal        = "E-20"
 )
 
@@ -225,6 +256,7 @@ var messages = map[string]string{
 	ErrDomainExists:    "Этот ресурс уже проксируется.",
 	ErrDomainInvalid:   "Не нашёл такой ресурс и не похоже на адрес сайта.",
 	ErrTemplateInvalid: "Эталон не прошёл проверку.",
+	ErrSubInvalid:      "Подписка не подошла.",
 	ErrInternal:        "Внутренняя ошибка. Администратор уведомлён.",
 }
 

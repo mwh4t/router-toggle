@@ -15,6 +15,7 @@ import (
 	"router-toggle/internal/api"
 	"router-toggle/internal/auth"
 	"router-toggle/internal/geosite"
+	"router-toggle/internal/nodes"
 	"router-toggle/internal/notify"
 	"router-toggle/internal/router"
 	"router-toggle/internal/sshconn"
@@ -80,6 +81,7 @@ func main() {
 	}
 	go s.loadGeosite()
 	go s.refreshLoop()
+	go s.syncLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +103,8 @@ func main() {
 	mux.HandleFunc("/v1/templates", s.handleTemplates)
 	mux.HandleFunc("/v1/templates/upload", s.handleTemplateUpload)
 	mux.HandleFunc("/v1/templates/apply", s.handleTemplateApply)
+	mux.HandleFunc("/v1/routers/sub", s.handleRouterSub)
+	mux.HandleFunc("/v1/sync", s.handleSync)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -485,12 +489,12 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, api.ErrInternal, err)
 		return
 	}
-	resp.Checks = healthChecks(h)
+	resp.Checks = healthChecks(h, a.admin)
 	s.notifyCheck(rc, actorName(a), resp.Checks, nil)
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func healthChecks(h router.Health) []api.Check {
+func healthChecks(h router.Health, admin bool) []api.Check {
 	checks := []api.Check{{Name: "Роутер на связи", State: "ok"}}
 
 	internet := api.Check{Name: "Интернет", State: "ok"}
@@ -508,6 +512,20 @@ func healthChecks(h router.Health) []api.Check {
 	}
 	checks = append(checks, proxy)
 
+	// админу каждая нода
+	if admin && h.VPNOn && len(h.Nodes) > 0 {
+		for _, n := range h.Nodes {
+			c := api.Check{Name: "Связь с VPN · " + strings.TrimPrefix(n.Tag, nodes.TagPrefix), State: "ok"}
+			switch {
+			case !n.OK && h.VPS:
+				c.State, c.Hint = "fail", "роутер работает через остальные"
+			case !n.OK:
+				c.State, c.Hint = "fail", "попробуйте перезагрузить роутер"
+			}
+			checks = append(checks, c)
+		}
+		return checks
+	}
 	vps := api.Check{Name: "Связь с VPN", State: "ok"}
 	switch {
 	case !h.VPNOn:

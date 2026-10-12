@@ -21,6 +21,8 @@ type Router struct {
 	AuthType    string
 	AuthSecret  string
 	HostKey     string
+	SubURL      string
+	NodesHash   string // ноды на роутере
 }
 
 type Store struct {
@@ -77,32 +79,40 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+var addedColumns = []string{"display_name", "sub_url", "nodes_hash"}
+
 func migrate(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(routers)`)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	have := map[string]bool{}
 	for rows.Next() {
 		var cid, notnull, pk int
 		var name, typ string
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
 			return err
 		}
-		if name == "display_name" {
-			return nil
+		have[name] = true
+	}
+	rows.Close()
+	for _, col := range addedColumns {
+		if have[col] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE routers ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
 		}
 	}
-	_, err = db.Exec(`ALTER TABLE routers ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`)
-	return err
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Routers() ([]Router, error) {
-	rows, err := s.db.Query(`SELECT id, name, display_name, firmware, tunnel_port, ssh_user,
-		auth_type, auth_secret, host_key FROM routers ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + routerColumns + ` FROM routers ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +120,8 @@ func (s *Store) Routers() ([]Router, error) {
 
 	var out []Router
 	for rows.Next() {
-		var r Router
-		if err := rows.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
-			&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey); err != nil {
+		r, err := scanRouter(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -121,15 +130,37 @@ func (s *Store) Routers() ([]Router, error) {
 }
 
 func (s *Store) Router(id int) (Router, error) {
-	var r Router
-	err := s.db.QueryRow(`SELECT id, name, display_name, firmware, tunnel_port, ssh_user,
-		auth_type, auth_secret, host_key FROM routers WHERE id = ?`, id).
-		Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
-			&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey)
+	r, err := scanRouter(s.db.QueryRow(`SELECT `+routerColumns+` FROM routers WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Router{}, ErrNotFound
 	}
 	return r, err
+}
+
+const routerColumns = `id, name, display_name, firmware, tunnel_port, ssh_user,
+	auth_type, auth_secret, host_key, sub_url, nodes_hash`
+
+func scanRouter(row interface{ Scan(...any) error }) (Router, error) {
+	var r Router
+	err := row.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
+		&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey, &r.SubURL, &r.NodesHash)
+	return r, err
+}
+
+func (s *Store) SetSubURL(id int, url string) error {
+	res, err := s.db.Exec(`UPDATE routers SET sub_url = ?, nodes_hash = '' WHERE id = ?`, url, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SetNodesHash(id int, hash string) error {
+	_, err := s.db.Exec(`UPDATE routers SET nodes_hash = ? WHERE id = ?`, hash, id)
+	return err
 }
 
 func (s *Store) AddRouter(r Router) (int, error) {

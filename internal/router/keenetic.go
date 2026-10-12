@@ -20,7 +20,7 @@ const (
 
 // список портов в правиле vless-reality/udp
 var keeneticUDPPortRe = regexp.MustCompile(
-	`(?s)("outboundTag":\s*"vless-reality",\s*"network":\s*"udp",\s*"port":\s*")([^"]*)(")`,
+	`(?s)("(?:outboundTag|balancerTag)":\s*"vless-reality",\s*"network":\s*"udp",\s*"port":\s*")([^"]*)(")`,
 )
 
 func (Keenetic) Firmware() string   { return FirmwareKeenetic }
@@ -145,7 +145,8 @@ func (Keenetic) ProxyRunning(r Runner) (bool, error) {
 
 // первый исходящий
 func (Keenetic) VPNProbe(r Runner) (bool, error) {
-	return yesNo(r, probeScript("", []string{keeneticOutboundsPath}, probeInbound("rt-probe")))
+	return yesNo(r, probeScript("", []string{keeneticOutboundsPath},
+		probeConfig([]string{probeInbound("rt-probe")}, "", "")))
 }
 
 func (Keenetic) Reboot(r Runner) error {

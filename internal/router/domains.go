@@ -112,6 +112,7 @@ type ruleSpan struct {
 	rule       struct {
 		RuleTag     string   `json:"ruleTag"`
 		OutboundTag string   `json:"outboundTag"`
+		BalancerTag string   `json:"balancerTag"`
 		Domain      []string `json:"domain"`
 	}
 }
@@ -286,7 +287,8 @@ func keeneticWithUser(text string, entries []DomainEntry) (string, error) {
 		switch {
 		case s.rule.RuleTag == userRuleTag:
 			user = i
-		case main == -1 && s.rule.RuleTag == "" && s.rule.OutboundTag == "vless-reality" && len(s.rule.Domain) > 0:
+		case main == -1 && s.rule.RuleTag == "" && len(s.rule.Domain) > 0 &&
+			(s.rule.OutboundTag == keeneticMainTag || s.rule.BalancerTag == keeneticMainTag):
 			main = i
 		}
 	}
@@ -296,7 +298,12 @@ func keeneticWithUser(text string, entries []DomainEntry) (string, error) {
 
 	lineStart := strings.LastIndexByte(text[:spans[main].start], '\n') + 1
 	indent := text[lineStart:spans[main].start]
-	block := keeneticRuleText(indent, entries)
+	// роутер на нодах
+	key := "outboundTag"
+	if spans[main].rule.BalancerTag == keeneticMainTag {
+		key = "balancerTag"
+	}
+	block := keeneticRuleText(indent, key, entries)
 
 	switch {
 	case user >= 0 && len(entries) > 0:
@@ -324,7 +331,7 @@ func keeneticCheckUser(content string, entries []DomainEntry) error {
 	return nil
 }
 
-func keeneticRuleText(indent string, entries []DomainEntry) string {
+func keeneticRuleText(indent, key string, entries []DomainEntry) string {
 	quoted := make([]string, len(entries))
 	for i, e := range entries {
 		b, _ := json.Marshal(keeneticString(e))
@@ -335,7 +342,7 @@ func keeneticRuleText(indent string, entries []DomainEntry) string {
 		in + `"type": "field",` + "\n" +
 		in + `"ruleTag": "` + userRuleTag + `",` + "\n" +
 		in + `"inboundTag": ["redirect", "tproxy"],` + "\n" +
-		in + `"outboundTag": "vless-reality",` + "\n" +
+		in + `"` + key + `": "` + keeneticMainTag + `",` + "\n" +
 		in + `"domain": [` + "\n" +
 		strings.Join(quoted, ",\n") + "\n" +
 		in + "]\n" +

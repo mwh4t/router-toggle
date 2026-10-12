@@ -22,6 +22,8 @@ from ui import (
     find_op,
     match_label,
     state_text,
+    sub_text,
+    sync_results_text,
     template_results_text,
     templates_text,
 )
@@ -46,6 +48,10 @@ class DomainForm(StatesGroup):
 
 class RenameForm(StatesGroup):
     name = State()
+
+
+class SubForm(StatesGroup):
+    url = State()
 
 
 class NewRouter(StatesGroup):
@@ -105,6 +111,7 @@ async def routers_keyboard() -> InlineKeyboardMarkup:
     routers = await api.routers(ADMIN_CODE)
     rows = [button(f"🏠 {r['name']}", f"rt:{r['id']}") for r in routers]
     rows.append(button("🗺 Маршрутизация", "tpl"))
+    rows.append(button("🛰 Ноды из подписок", "syn"))
     rows.append(button("➕ Завести роутер", "add"))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -121,6 +128,7 @@ def router_keyboard(rid: int, state: dict | None) -> InlineKeyboardMarkup:
                                f"ask:vpn:{rid}:{int(not vpn['value'])}"))
     rows.append(button("🌐 Сайты через VPN", f"dom:{rid}"))
     rows.append(button("🗺 Маршрутизация из эталона", f"tplr:{rid}"))
+    rows.append(button("🛰 Подписка и ноды", f"sub:{rid}"))
     rows.append([
         InlineKeyboardButton(text="✏️ Имя", callback_data=f"ren:{rid}"),
         InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"lnk:{rid}"),
@@ -630,6 +638,117 @@ async def cb_router_template_apply(call: CallbackQuery):
         await edit(call.message, f"⚠️ {e.message}", back)
         return
     await edit(call.message, template_results_text(res.get("results") or [], "🗺 <b>Маршрутизация</b>"), back)
+
+
+# подписка роутера
+
+def sub_keyboard(rid: int, res: dict | None) -> InlineKeyboardMarkup:
+    rows = []
+    if res and res["status"] == "changes":
+        rows.append(button("✅ Применить", f"subap:{rid}"))
+    rows.append(button("🔗 Сменить подписку", f"subset:{rid}"))
+    rows.append(button("← Назад", f"rt:{rid}"))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_sub(message: Message, rid: int, res: dict, note: str = "", fresh: bool = False) -> None:
+    text, markup = note + sub_text(res), sub_keyboard(rid, res)
+    if fresh:
+        await show(message, text, reply_markup=markup)
+    else:
+        await edit(message, text, markup)
+
+
+@dp.callback_query(F.data.startswith("sub:"))
+async def cb_sub(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await state.clear()
+    await call.answer("Сверяю с подпиской…")
+    rid = int(call.data.split(":")[1])
+    try:
+        res = await api.sync(ADMIN_CODE, rid, dry_run=True)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {html.escape(e.message)}", sub_keyboard(rid, None))
+        return
+    await show_sub(call.message, rid, (res.get("results") or [{}])[0])
+
+
+@dp.callback_query(F.data.startswith("subap:"))
+async def cb_sub_apply(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Применяю, это до минуты…")
+    rid = int(call.data.split(":")[1])
+    try:
+        res = await api.sync(ADMIN_CODE, rid, dry_run=False)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {html.escape(e.message)}", sub_keyboard(rid, None))
+        return
+    await show_sub(call.message, rid, (res.get("results") or [{}])[0])
+
+
+@dp.callback_query(F.data.startswith("subset:"))
+async def cb_sub_set(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer()
+    rid = int(call.data.split(":")[1])
+    await state.set_state(SubForm.url)
+    await state.update_data(rid=rid)
+    await edit(call.message, "🔗 Пришлите ссылку на подписку учётки этого роутера из панели. Сообщение удалю сразу.",
+               InlineKeyboardMarkup(inline_keyboard=[button("✖️ Отмена", f"sub:{rid}")]))
+
+
+@dp.message(StateFilter(SubForm.url), F.text)
+async def on_sub_url(message: Message, state: FSMContext):
+    if not allowed(message.from_user.id):
+        return
+    # ссылка даёт доступ к vpn
+    await drop(message)
+    rid = (await state.get_data())["rid"]
+    await state.clear()
+    try:
+        res = await api.set_sub(ADMIN_CODE, rid, message.text.strip())
+    except APIError as e:
+        await show(message, f"⚠️ {html.escape(e.message)}", reply_markup=sub_keyboard(rid, None))
+        return
+    await show_sub(message, rid, (res.get("results") or [{}])[0], "✅ Подписка сохранена\n\n", fresh=True)
+
+
+@dp.callback_query(F.data == "syn")
+async def cb_sync_all(call: CallbackQuery, state: FSMContext):
+    if not allowed(call.from_user.id):
+        return
+    await state.clear()
+    await call.answer("Сверяю все роутеры…")
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Роутеры", "list")])
+    try:
+        res = await api.sync(ADMIN_CODE, 0, dry_run=True)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {html.escape(e.message)}", back)
+        return
+    results = res.get("results") or []
+    rows = []
+    if any(r["status"] == "changes" for r in results):
+        rows.append(button("✅ Применить ко всем", "syna"))
+    rows.append(button("← Роутеры", "list"))
+    await edit(call.message, sync_results_text(results, "🛰 <b>Ноды из подписок</b>"),
+               InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.callback_query(F.data == "syna")
+async def cb_sync_all_apply(call: CallbackQuery):
+    if not allowed(call.from_user.id):
+        return
+    await call.answer("Запускаю…")
+    back = InlineKeyboardMarkup(inline_keyboard=[button("← Роутеры", "list")])
+    try:
+        await api.sync(ADMIN_CODE, 0, dry_run=False)
+    except APIError as e:
+        await edit(call.message, f"⚠️ {html.escape(e.message)}", back)
+        return
+    await edit(call.message, "▶️ Применяю по одному роутеру, отчёт придёт отдельным сообщением.", back)
 
 
 # файл с именем эталона заменяет эталон

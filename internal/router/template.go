@@ -47,6 +47,9 @@ func ValidateTemplate(name, content string) error {
 		if !json.Valid([]byte(content)) {
 			return fmt.Errorf("%w: не JSON", ErrUnknownFormat)
 		}
+		if _, ok := keeneticBalancers(content); ok || strings.Contains(content, `"balancerTag"`) {
+			return fmt.Errorf("%w: эталон должен быть без нод, с outboundTag %s", ErrUnknownFormat, keeneticMainTag)
+		}
 		if _, err := keeneticWithUser(content, nil); err != nil {
 			return err
 		}
@@ -98,6 +101,13 @@ func (Keenetic) PlanTemplate(r Runner, template string, _ Expander) (*Plan, erro
 	if updated, err = keeneticWithUser(updated, entries); err != nil {
 		return nil, err
 	}
+	// балансировщик роутера остаётся
+	balancers, nodesOn := keeneticBalancers(text)
+	if nodesOn {
+		if updated, err = keeneticUseBalancer(updated, balancers); err != nil {
+			return nil, err
+		}
+	}
 
 	plan := &Plan{}
 	if sameText(updated, text) {
@@ -117,6 +127,9 @@ func (Keenetic) PlanTemplate(r Runner, template string, _ Expander) (*Plan, erro
 			}
 			if contains(ports, keeneticUDPRangeDash) != games {
 				return fmt.Errorf("диапазон %s не в прежнем состоянии", keeneticUDPRangeDash)
+			}
+			if nodesOn {
+				return keeneticCheckBalancer(content, balancers)
 			}
 			return nil
 		},
