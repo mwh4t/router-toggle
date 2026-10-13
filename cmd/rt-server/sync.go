@@ -45,15 +45,15 @@ func (s *server) handleRouterSub(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.SyncResponse{Results: []api.SyncResult{s.syncRouter(rc, true, true, false)}})
 }
 
-var panelUUIDRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var panelIDRe = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)
 
 func (s *server) handleRouterOwner(w http.ResponseWriter, r *http.Request) {
 	var req api.OwnerRequest
 	if !s.decode(w, r, &req) || !s.adminOnly(w, r, req.Code) {
 		return
 	}
-	owner := strings.ToLower(strings.TrimSpace(req.Owner))
-	if owner != "" && !panelUUIDRe.MatchString(owner) || len(req.Access) > 20 {
+	owner := strings.TrimSpace(req.Owner)
+	if owner != "" && !panelIDRe.MatchString(owner) || len(req.Access) > 20 {
 		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, nil)
 		return
 	}

@@ -27,7 +27,7 @@ type Router struct {
 	SubURL      string
 	NodesHash   string // ноды на роутере
 
-	Owner  string  // uuid учётки в панели
+	Owner  string  // номер учётки в панели
 	Access []int64 // telegram id
 
 	Primary    string
