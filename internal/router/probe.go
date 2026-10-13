@@ -80,6 +80,21 @@ func speedScript(env string, configs []string, cfg string) string {
 	), "\n")
 }
 
+// временному xray нужно около 20 мб
+const MinMemForProbeKB = 48 << 10
+
+func MemAvailableKB(r Runner) (int, error) {
+	out, err := r.Run(`awk '/^MemAvailable:/ {print $2}' /proc/meminfo`)
+	if err != nil {
+		return 0, fmt.Errorf("память роутера: %w", err)
+	}
+	kb, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("память роутера: неожиданный ответ %q", strings.TrimSpace(out))
+	}
+	return kb, nil
+}
+
 func speedOf(r Runner, cmd string) (float64, error) {
 	out, err := r.Run(cmd)
 	if err != nil {

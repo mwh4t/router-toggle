@@ -112,6 +112,9 @@ func measureNodes(r router.Runner, ctrl router.Controller, set nodes.Set) (map[s
 	if err != nil {
 		return nil, err
 	}
+	if kb, err := router.MemAvailableKB(r); err == nil && kb < router.MinMemForProbeKB {
+		return nil, &lowMemError{kb}
+	}
 	speeds := map[string]float64{}
 	for _, tag := range set.Tags() {
 		if !contains(have, tag) {
@@ -124,6 +127,13 @@ func measureNodes(r router.Runner, ctrl router.Controller, set nodes.Set) (map[s
 		speeds[tag] = v
 	}
 	return speeds, nil
+}
+
+// замер подождёт неделю, чтобы не задеть рабочий xray
+type lowMemError struct{ kb int }
+
+func (e *lowMemError) Error() string {
+	return fmt.Sprintf("замер пропущен, у роутера свободно %d МБ", e.kb>>10)
 }
 
 // смена только при заметном выигрыше
@@ -254,7 +264,11 @@ func (s *server) syncRouter(rc store.Router, dry, force, measure bool) api.SyncR
 
 	if measure {
 		speeds, err := measureNodes(client, ctrl, set)
+		var low *lowMemError
 		switch {
+		case errors.As(err, &low):
+			_ = s.st.SetSpeeds(rc.ID, nil)
+			res.Message = err.Error()
 		case err != nil:
 			res.Message = "замер не удался: " + err.Error()
 		case len(speeds) > 1:

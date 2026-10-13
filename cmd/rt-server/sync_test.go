@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -80,5 +81,13 @@ func TestSwitchReport(t *testing.T) {
 		Primary: "edge-se1", Speeds: map[string]float64{"edge-fi1": 20, "edge-se1": 41.5}}
 	if got := syncReport([]api.SyncResult{r}, true); !strings.Contains(got, "основная теперь edge-se1 (edge-fi1 20, edge-se1 42 Мбит/с)") {
 		t.Fatal(got)
+	}
+}
+
+func TestLowMemMessage(t *testing.T) {
+	var err error = &lowMemError{37448}
+	var low *lowMemError
+	if !errors.As(err, &low) || err.Error() != "замер пропущен, у роутера свободно 36 МБ" {
+		t.Fatal(err)
 	}
 }
