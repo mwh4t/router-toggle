@@ -15,24 +15,26 @@ import (
 const repeatAfter = 30 * time.Minute
 
 type Telegram struct {
-	token  string
-	chatID string
-	http   *http.Client
+	token    string
+	chatID   string
+	threadID string // тема в группе
+	http     *http.Client
 
 	mu   sync.Mutex
 	sent map[string]time.Time
 }
 
 // пустой токен отключает уведомления
-func New(token, chatID string) *Telegram {
+func New(token, chatID, threadID string) *Telegram {
 	if token == "" || chatID == "" {
 		return nil
 	}
 	return &Telegram{
-		token:  token,
-		chatID: chatID,
-		http:   &http.Client{Timeout: 10 * time.Second},
-		sent:   map[string]time.Time{},
+		token:    token,
+		chatID:   chatID,
+		threadID: threadID,
+		http:     &http.Client{Timeout: 10 * time.Second},
+		sent:     map[string]time.Time{},
 	}
 }
 
@@ -59,6 +61,9 @@ func (t *Telegram) throttled(key string) bool {
 func (t *Telegram) send(text string) {
 	form := url.Values{}
 	form.Set("chat_id", t.chatID)
+	if t.threadID != "" {
+		form.Set("message_thread_id", t.threadID)
+	}
 	form.Set("text", text)
 	form.Set("disable_web_page_preview", "true")
 

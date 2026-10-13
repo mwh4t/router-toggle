@@ -77,7 +77,7 @@ func main() {
 		st:      st,
 		locks:   newRouterLocks(),
 		limiter: auth.NewLimiter(),
-		tg:      notify.New(cfg.TelegramToken, cfg.TelegramChatID),
+		tg:      notify.New(cfg.TelegramToken, cfg.TelegramChatID, cfg.TelegramThread),
 		reboots: newCooldown(10 * time.Minute),
 		geo:     geosite.NewIndex(),
 	}

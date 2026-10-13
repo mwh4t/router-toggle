@@ -7,5 +7,7 @@
   "server_key": "openssl rand -hex 32",
   "admin_code": "от 16 символов из A-Z без I и O и цифр 2-9",
   "telegram_token": "токен админского бота",
-  "telegram_chat_id": "chat_id"
+  "telegram_chat_id": "chat_id",
+  "telegram_thread_id": "тема в группе для уведомлений, можно не указывать",
+  "backup_thread_id": "тема для rt-backup, можно не указывать"
 }

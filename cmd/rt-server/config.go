@@ -24,6 +24,8 @@ type Config struct {
 
 	TelegramToken  string `json:"telegram_token"`
 	TelegramChatID string `json:"telegram_chat_id"`
+	TelegramThread string `json:"telegram_thread_id"`
+	BackupThread   string `json:"backup_thread_id"` // для rt-backup
 }
 
 func LoadConfig(path string) (*Config, []byte, error) {

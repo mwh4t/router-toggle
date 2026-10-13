@@ -30,9 +30,11 @@ tar -czf "$ARCHIVE" \
 
 TOKEN=$(python3 -c "import json; print(json.load(open('$CONFIG'))['telegram_token'])")
 CHAT=$(python3 -c "import json; print(json.load(open('$CONFIG'))['telegram_chat_id'])")
+THREAD=$(python3 -c "import json; c = json.load(open('$CONFIG')); print(c.get('backup_thread_id') or c.get('telegram_thread_id') or '')")
 
 if ! curl -sf -o /dev/null \
 	-F chat_id="$CHAT" \
+	${THREAD:+-F message_thread_id="$THREAD"} \
 	-F document=@"$ARCHIVE" \
 	-F caption="🗄 Резервная копия router-toggle · $STAMP" \
 	"https://api.telegram.org/bot$TOKEN/sendDocument"; then
