@@ -195,6 +195,9 @@ func parseLink(link string) (Node, error) {
 	if n.Fingerprint == "" {
 		n.Fingerprint = "chrome"
 	}
+	if n.Mode == "" || n.Mode == "auto" {
+		n.Mode = "packet-up"
+	}
 	if extra := q.Get("extra"); extra != "" {
 		if !json.Valid([]byte(extra)) {
 			return Node{}, fmt.Errorf("extra не json")

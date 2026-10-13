@@ -35,6 +35,9 @@ func TestParse(t *testing.T) {
 		t.Fatalf("пропущено %v", set.Skipped)
 	}
 	fi := set.Nodes[0]
+	if fi.Mode != "packet-up" {
+		t.Fatalf("режим %q, нужен packet-up вместо auto", fi.Mode)
+	}
 	if fi.Name != "🇫🇮 Финляндия · XHTTP" || fi.Path != "/mwh4t" || fi.ServerName != "cdn-fi1.example.org" ||
 		fi.ShortID != "4af6eba6" || fi.SpiderX != "/" || fi.Fingerprint != "firefox" {
 		t.Fatalf("разобрано неверно: %+v", fi)
