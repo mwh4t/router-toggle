@@ -73,7 +73,7 @@ func Dial(t Target) (*Client, error) {
 		Timeout:         dialTimeout,
 	}
 	if keyAlgo != "" {
-		cfg.HostKeyAlgorithms = []string{keyAlgo}
+		cfg.HostKeyAlgorithms = hostKeyAlgos(keyAlgo)
 	}
 
 	sc, chans, reqs, err := ssh.NewClientConn(conn, t.Addr, cfg)
