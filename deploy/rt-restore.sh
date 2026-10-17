@@ -10,13 +10,17 @@ apt-get install -y -q sqlite3 curl certbot
 
 SRC=$(mktemp -d)
 trap 'rm -rf "$SRC"' EXIT
-tar -xzf "$ARCHIVE" -C "$SRC"
+case "$ARCHIVE" in
+*.enc) openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in "$ARCHIVE" | tar -xz -C "$SRC" ;;
+*) tar -xzf "$ARCHIVE" -C "$SRC" ;;
+esac
 
 # сервер
 install -d -m 700 /etc/router-toggle
 cp -a "$SRC/etc/router-toggle/." /etc/router-toggle/
 install -m 600 "$SRC/db/router-toggle.sqlite" /etc/router-toggle/router-toggle.db
 chmod 600 /etc/router-toggle/config.json
+[ -f /etc/router-toggle/backup.pass ] && chmod 600 /etc/router-toggle/backup.pass
 
 cp "$SRC"/etc/systemd/system/*.service /etc/systemd/system/
 

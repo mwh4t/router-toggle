@@ -4,7 +4,7 @@
 
 ## что понадобится
 
-- свежий архив `rt-backup-*.tar.gz` из темы «Бэкапы» админской группы
+- свежий архив `rt-backup-*.tar.gz.enc` из темы «Бэкапы» админской группы и пароль от него из менеджера паролей
 - доступ к dns домена
 - пк с репозиторием
 
@@ -14,7 +14,7 @@
 
 ```
 make server
-scp rt-server deploy/rt-restore.sh deploy/rt-backup.sh rt-backup-*.tar.gz root@НОВЫЙ_IP:/root/
+scp rt-server deploy/rt-restore.sh deploy/rt-backup.sh rt-backup-*.tar.gz.enc root@НОВЫЙ_IP:/root/
 ```
 
 на новом сервере:
@@ -22,7 +22,7 @@ scp rt-server deploy/rt-restore.sh deploy/rt-backup.sh rt-backup-*.tar.gz root@�
 ```
 install -m 755 /root/rt-server /usr/local/bin/rt-server
 install -m 700 /root/rt-backup.sh /usr/local/bin/rt-backup
-sh /root/rt-restore.sh /root/rt-backup-*.tar.gz
+sh /root/rt-restore.sh /root/rt-backup-*.tar.gz.enc
 ```
 
 скрипт в конце напечатает порт ssh - дальше подключаться к новому серверу уже на него

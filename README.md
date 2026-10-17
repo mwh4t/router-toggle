@@ -143,7 +143,7 @@ the balancer holds one primary node and falls back to the next one when the `bur
 <details>
 <summary><b>backups & migration</b></summary>
 
-`deploy/rt-backup.sh` sends a weekly archive to telegram. moving to a new vps is one script and a dns switch - see [deploy/MIGRATION.md](deploy/MIGRATION.md)
+`deploy/rt-backup.sh` sends a weekly archive to telegram, encrypted with the password from `/etc/router-toggle/backup.pass`. moving to a new vps is one script and a dns switch - see [deploy/MIGRATION.md](deploy/MIGRATION.md)
 </details>
 
 ## development
