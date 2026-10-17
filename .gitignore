@@ -311,4 +311,3 @@ SPEC.md
 /.env
 /dist/
 /rt-server
-bot/.env

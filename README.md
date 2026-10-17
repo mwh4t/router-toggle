@@ -28,8 +28,8 @@ clients never see router credentials - only a personal access code that opens ex
 - **sites via vpn** - add any [v2fly](https://github.com/v2fly/domain-list-community) service by name, or a single domain
 - **health check** - router, internet, proxy service and vpn link at a glance
 - **reboot** - with confirmation and a cooldown
-- **nodes from a subscription** (admin bot) - each router gets the link of its own panel account; the server takes the vless reality xhttp nodes from it, and xray on the router picks the live one with the lowest ping by itself. checked every night and on demand, the router is touched only when the nodes changed
-- **routing templates** (admin bot) - send `dnsmasq.servers` or `05_routing.json` to the bot, compare with every router and roll it out to one or all of them; sites added by clients and the game ports state are kept
+- **nodes from a subscription** (admin section of the telegram bot) - each router gets the link of its own panel account; the server takes the vless reality xhttp nodes from it, and xray on the router picks the live one with the lowest ping by itself. checked every night and on demand, the router is touched only when the nodes changed
+- **routing templates** (admin section of the telegram bot) - send `dnsmasq.servers` or `05_routing.json` to the bot, compare with every router and roll it out to one or all of them; sites added by clients and the game ports state are kept
 - **manual mode** - direct ssh to your own router, no server involved
 
 every change is applied atomically: temp file → syntax check → backup → `mv` → restart → read-back → rollback on mismatch
@@ -92,7 +92,7 @@ scp rt-server root@vps:/usr/local/bin/
   "db_path": "/etc/router-toggle/router-toggle.db",
   "server_key": "<openssl rand -hex 32>",
   "admin_code": "<16+ chars: A-Z without I/O, digits 2-9>",
-  "telegram_token": "<admin bot token>",
+  "telegram_token": "<bot token for alerts and backups>",
   "telegram_chat_id": "<your chat id>"
 }
 ```
@@ -128,7 +128,7 @@ http {
 <details>
 <summary><b>routers</b></summary>
 
-add a router from the cli or admin bot with its tunnel port and ssh password - the server pins the host key on first connect and returns the client access code
+add a router from the cli or the admin section of the bot with its tunnel port and ssh password - the server pins the host key on first connect and returns the client access code
 
 user-added sites live in a dedicated place and never touch hand-written config:
 
@@ -141,20 +141,9 @@ the balancer holds one primary node and falls back to the next one when the `bur
 </details>
 
 <details>
-<summary><b>admin bot</b></summary>
-
-```sh
-cd bot && python3 -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env   # token, admin code, allowed user ids
-```
-
-replies only to allowed user ids. adds and renames routers, shares client links, receives failure alerts
-</details>
-
-<details>
 <summary><b>backups & migration</b></summary>
 
-`deploy/rt-backup.sh` sends a weekly archive to the admin bot. moving to a new vps is one script and a dns switch - see [deploy/MIGRATION.md](deploy/MIGRATION.md)
+`deploy/rt-backup.sh` sends a weekly archive to telegram. moving to a new vps is one script and a dns switch - see [deploy/MIGRATION.md](deploy/MIGRATION.md)
 </details>
 
 ## development
@@ -173,6 +162,5 @@ internal/router      firmware controllers and apply protocol
 internal/nodes       subscription links to xray outbounds
 internal/geosite     v2fly dlc.dat reader
 internal/sshconn     ssh with host key pinning
-bot/                 admin telegram bot
 deploy/              backup, restore, migration
 ```

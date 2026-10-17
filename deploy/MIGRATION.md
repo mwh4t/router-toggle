@@ -1,10 +1,10 @@
 # переезд на новый vps
 
-❗переносится только router-toggle (сервер, оба бота, туннели роутеров)❗
+❗переносится только router-toggle (сервер и туннели роутеров)❗
 
 ## что понадобится
 
-- свежий архив `rt-backup-*.tar.gz` из админского бота
+- свежий архив `rt-backup-*.tar.gz` из темы «Бэкапы» админской группы
 - доступ к dns домена
 - пк с репозиторием
 
@@ -33,7 +33,7 @@ sh /root/rt-restore.sh /root/rt-backup-*.tar.gz
 
 ## 3. переключение
 
-1. на старом сервере: `rt-backup`, если с момента последней копии что-то менялось, и `systemctl stop rt-server rt-bot vpn-bot`. Два экземпляра ботов с одним токеном одновременно не работают
+1. на старом сервере: `rt-backup`, если с момента последней копии что-то менялось, и `systemctl stop rt-server`
 2. в dns перевести старые домены на новые
 3. дождаться, пока записи обновятся: `dig +short example.com` должен показывать новый адрес
 4. на новом сервере выпустить сертификат и запустить всё:
@@ -41,7 +41,7 @@ sh /root/rt-restore.sh /root/rt-backup-*.tar.gz
 ```
 certbot certonly --standalone -d rt.example.com
 nginx -t && systemctl reload nginx
-systemctl start rt-server rt-bot vpn-bot
+systemctl start rt-server
 ```
 
 ## 4. проверка

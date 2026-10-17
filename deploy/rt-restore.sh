@@ -6,7 +6,7 @@ ARCHIVE=${1:?укажите архив резервной копии}
 [ -x /usr/local/bin/rt-server ] || { echo "сначала положите /usr/local/bin/rt-server"; exit 1; }
 
 apt-get update -q
-apt-get install -y -q sqlite3 python3-venv curl certbot
+apt-get install -y -q sqlite3 curl certbot
 
 SRC=$(mktemp -d)
 trap 'rm -rf "$SRC"' EXIT
@@ -17,19 +17,6 @@ install -d -m 700 /etc/router-toggle
 cp -a "$SRC/etc/router-toggle/." /etc/router-toggle/
 install -m 600 "$SRC/db/router-toggle.sqlite" /etc/router-toggle/router-toggle.db
 chmod 600 /etc/router-toggle/config.json
-
-# боты, окружения собираются заново
-for bot in rt-bot vpn-bot; do
-	[ -d "$SRC/opt/$bot" ] || continue
-	install -d "/opt/$bot"
-	cp -a "$SRC/opt/$bot/." "/opt/$bot/"
-	chmod 600 "/opt/$bot/.env"
-	python3 -m venv "/opt/$bot/venv"
-	"/opt/$bot/venv/bin/pip" install -q -r "/opt/$bot/requirements.txt"
-done
-if [ -f "$SRC/db/vpn-bot.sqlite" ]; then
-	install -m 600 "$SRC/db/vpn-bot.sqlite" /opt/vpn-bot/vpn-bot.db
-fi
 
 cp "$SRC"/etc/systemd/system/*.service /etc/systemd/system/
 
@@ -61,7 +48,7 @@ if [ -x /usr/local/bin/rt-backup ] && ! crontab -l 2>/dev/null | grep -q rt-back
 fi
 
 systemctl daemon-reload
-systemctl enable rt-server rt-bot vpn-bot
+systemctl enable rt-server
 
 echo
 echo "готово, службы включены, но не запущены"
