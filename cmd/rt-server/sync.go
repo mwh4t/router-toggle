@@ -90,12 +90,12 @@ func (s *server) handleRouterPrimary(w http.ResponseWriter, r *http.Request) {
 	}
 	want := strings.TrimSpace(req.Primary)
 	if want == "" {
-		if err := s.st.SetPin(rc.ID, rc.Primary, false); err != nil {
+		if err := s.st.SetPreferred(rc.ID, rc.Primary, ""); err != nil {
 			writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
 			return
 		}
 		s.st.Log(rc.ID, "admin", "primary", true, "ok", "auto")
-		rc.Pinned = false
+		rc.Preferred = ""
 		writeJSON(w, http.StatusOK, api.SyncResponse{Results: []api.SyncResult{s.syncRouter(rc, true, true, false)}})
 		return
 	}
@@ -116,12 +116,12 @@ func (s *server) handleRouterPrimary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, fmt.Errorf("ноды %s нет в подписке", want))
 		return
 	}
-	if err := s.st.SetPin(rc.ID, tag, true); err != nil {
+	if err := s.st.SetPreferred(rc.ID, tag, tag); err != nil {
 		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
 		return
 	}
-	s.st.Log(rc.ID, "admin", "primary", true, "ok", "pin "+want)
-	rc.Primary, rc.Pinned = tag, true
+	s.st.Log(rc.ID, "admin", "primary", true, "ok", "prefer "+want)
+	rc.Primary, rc.Preferred = tag, tag
 	writeJSON(w, http.StatusOK, api.SyncResponse{Results: []api.SyncResult{s.syncRouter(rc, false, true, false)}})
 }
 
@@ -147,6 +147,7 @@ func (s *server) fetch(rc store.Router, link string) (nodes.Set, error) {
 const (
 	measureEvery = 7*24*time.Hour - time.Hour
 	switchMargin = 1.3
+	preferMargin = 2.0 // с приоритетной уходим, только если другая вдвое быстрее
 )
 
 // замер только нод, уже стоящих на роутере
@@ -184,12 +185,18 @@ func (e *lowMemError) Error() string {
 }
 
 // смена только при заметном выигрыше
-func pickPrimary(set nodes.Set, speeds map[string]float64) string {
+func pickPrimary(set nodes.Set, speeds map[string]float64, preferred string) string {
 	cur, best := set.Main(), set.Main()
 	for _, tag := range set.Tags() {
 		if speeds[tag] > speeds[best] {
 			best = tag
 		}
+	}
+	if set.Has(preferred) {
+		if speeds[preferred] == 0 && speeds[best] > 0 || speeds[preferred] > 0 && speeds[best] >= speeds[preferred]*preferMargin {
+			return best
+		}
+		return preferred
 	}
 	if speeds[cur] == 0 && speeds[best] > 0 || speeds[best] >= speeds[cur]*switchMargin {
 		return best
@@ -287,7 +294,7 @@ func (s *server) syncRouter(rc store.Router, dry, force, measure bool) api.SyncR
 	for _, tag := range set.Tags() {
 		res.Tags = append(res.Tags, strings.TrimPrefix(tag, nodes.TagPrefix))
 	}
-	res.Pinned = rc.Pinned
+	res.Preferred = strings.TrimPrefix(rc.Preferred, nodes.TagPrefix)
 	res.Speeds = shortSpeeds(rc.Speeds)
 	measure = measure || !dry && time.Since(rc.MeasuredAt) > measureEvery
 	if !force && !measure && set.Hash() == rc.NodesHash {
@@ -325,15 +332,16 @@ func (s *server) syncRouter(rc store.Router, dry, force, measure bool) api.SyncR
 		case len(speeds) > 1:
 			_ = s.st.SetSpeeds(rc.ID, speeds)
 			res.Speeds = shortSpeeds(speeds)
-			if rc.Pinned {
-				res.Message = "основная закреплена вручную, замер её не меняет"
-				break
-			}
-			if best := pickPrimary(set, speeds); best != set.Main() {
+			best := pickPrimary(set, speeds, rc.Preferred)
+			if best != set.Main() {
 				res.Switched = true
 				set.Primary = best
 			} else {
 				set.Primary = set.Main()
+			}
+			if set.Has(rc.Preferred) && best != rc.Preferred {
+				res.Message = "приоритетная " + strings.TrimPrefix(rc.Preferred, nodes.TagPrefix) +
+					" вдвое медленнее, до следующего замера основная " + strings.TrimPrefix(best, nodes.TagPrefix)
 			}
 			// выбор хранится сразу, применится этой или следующей сверкой
 			_ = s.st.SetPrimary(rc.ID, set.Primary)

@@ -723,7 +723,8 @@ func stateResponse(info api.RouterInfo, op string, value bool, readAt time.Time,
 func routerInfo(rc store.Router, a actor) api.RouterInfo {
 	if a.admin {
 		info := api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware, DisplayName: rc.DisplayName,
-			Owner: rc.Owner, Access: rc.Access, Primary: strings.TrimPrefix(rc.Primary, nodes.TagPrefix), Pinned: rc.Pinned}
+			Owner: rc.Owner, Access: rc.Access, Primary: strings.TrimPrefix(rc.Primary, nodes.TagPrefix),
+			Preferred: strings.TrimPrefix(rc.Preferred, nodes.TagPrefix)}
 		if rc.SubURL != "" {
 			sum := sha256.Sum256([]byte(rc.SubURL))
 			info.SubHash = hex.EncodeToString(sum[:])[:16]

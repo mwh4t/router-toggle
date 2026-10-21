@@ -31,7 +31,7 @@ type Router struct {
 	Access []int64 // telegram id
 
 	Primary    string
-	Pinned     bool               // основная выбрана вручную
+	Preferred  string             // приоритетная нода, пусто значит по замеру
 	Speeds     map[string]float64 // мбит/с
 	MeasuredAt time.Time
 }
@@ -171,7 +171,12 @@ func scanRouter(row interface{ Scan(...any) error }) (Router, error) {
 		_ = json.Unmarshal([]byte(speeds), &r.Speeds)
 	}
 	r.MeasuredAt, _ = time.Parse(time.RFC3339, measured)
-	r.Pinned = pinned == "1"
+	// "1" от первой версии закрепления
+	if pinned == "1" {
+		r.Preferred = r.Primary
+	} else {
+		r.Preferred = pinned
+	}
 	return r, nil
 }
 
@@ -196,12 +201,8 @@ func (s *Store) SetPrimary(id int, primary string) error {
 	return err
 }
 
-func (s *Store) SetPin(id int, primary string, pinned bool) error {
-	flag := ""
-	if pinned {
-		flag = "1"
-	}
-	res, err := s.db.Exec(`UPDATE routers SET primary_tag = ?, pinned = ? WHERE id = ?`, primary, flag, id)
+func (s *Store) SetPreferred(id int, primary, preferred string) error {
+	res, err := s.db.Exec(`UPDATE routers SET primary_tag = ?, pinned = ? WHERE id = ?`, primary, preferred, id)
 	if err != nil {
 		return err
 	}

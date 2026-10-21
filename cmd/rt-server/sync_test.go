@@ -59,13 +59,35 @@ func TestPickPrimary(t *testing.T) {
 		{15, 15, "node-fi1"},
 	}
 	for _, c := range cases {
-		if got := pickPrimary(set, map[string]float64{"node-fi1": c.fi, "node-se1": c.se}); got != c.want {
+		if got := pickPrimary(set, map[string]float64{"node-fi1": c.fi, "node-se1": c.se}, ""); got != c.want {
 			t.Fatalf("%v: %s", c, got)
 		}
 	}
 	set.Primary = "node-se1"
-	if got := pickPrimary(set, map[string]float64{"node-fi1": 70, "node-se1": 60}); got != "node-se1" {
+	if got := pickPrimary(set, map[string]float64{"node-fi1": 70, "node-se1": 60}, ""); got != "node-se1" {
 		t.Fatal("без запаса основная не меняется", got)
+	}
+}
+
+func TestPickPreferred(t *testing.T) {
+	set := nodes.Set{Nodes: []nodes.Node{{Tag: "node-fi1"}, {Tag: "node-se1"}}}
+	cases := []struct {
+		fi, se float64
+		want   string
+	}{
+		{90, 50, "node-se1"},
+		{110, 50, "node-fi1"},
+		{30, 0, "node-fi1"},
+		{0, 0, "node-se1"},
+	}
+	for _, c := range cases {
+		if got := pickPrimary(set, map[string]float64{"node-fi1": c.fi, "node-se1": c.se}, "node-se1"); got != c.want {
+			t.Fatalf("%v: %s", c, got)
+		}
+	}
+	set.Primary = "node-fi1"
+	if got := pickPrimary(set, map[string]float64{"node-fi1": 60, "node-se1": 50}, "node-se1"); got != "node-se1" {
+		t.Fatal("приоритетная возвращается при следующем замере", got)
 	}
 }
 

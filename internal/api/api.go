@@ -107,14 +107,14 @@ type RouterInfo struct {
 	Firmware    string `json:"firmware"`
 	DisplayName string `json:"display_name,omitempty"` // только админу
 
-	Owner   string  `json:"owner,omitempty"`
-	Access  []int64 `json:"access,omitempty"`
-	SubHash string  `json:"sub_hash,omitempty"` // сверка без самой ссылки
-	Primary string  `json:"primary,omitempty"`
-	Pinned  bool    `json:"pinned,omitempty"`
+	Owner     string  `json:"owner,omitempty"`
+	Access    []int64 `json:"access,omitempty"`
+	SubHash   string  `json:"sub_hash,omitempty"` // сверка без самой ссылки
+	Primary   string  `json:"primary,omitempty"`
+	Preferred string  `json:"preferred,omitempty"`
 }
 
-// пустая primary возвращает выбор по замеру
+// пустая primary возвращает выбор по замеру, иначе нода становится приоритетной
 type PrimaryRequest struct {
 	Code     string `json:"code"`
 	RouterID int    `json:"router_id"`
@@ -227,11 +227,11 @@ type SyncResult struct {
 	First   bool       `json:"first,omitempty"`
 	Message string     `json:"message,omitempty"`
 
-	Primary  string             `json:"primary,omitempty"`
-	Pinned   bool               `json:"pinned,omitempty"`
-	Tags     []string           `json:"tags,omitempty"` // в том же порядке, что nodes
-	Switched bool               `json:"switched,omitempty"`
-	Speeds   map[string]float64 `json:"speeds,omitempty"`
+	Primary   string             `json:"primary,omitempty"`
+	Preferred string             `json:"preferred,omitempty"`
+	Tags      []string           `json:"tags,omitempty"` // в том же порядке, что nodes
+	Switched  bool               `json:"switched,omitempty"`
+	Speeds    map[string]float64 `json:"speeds,omitempty"`
 }
 
 type SyncResponse struct {
