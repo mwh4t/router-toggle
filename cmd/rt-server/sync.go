@@ -78,6 +78,53 @@ func (s *server) handleRouterOwner(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, routerInfo(rc, actor{admin: true}))
 }
 
+func (s *server) handleRouterPrimary(w http.ResponseWriter, r *http.Request) {
+	var req api.PrimaryRequest
+	if !s.decode(w, r, &req) || !s.adminOnly(w, r, req.Code) {
+		return
+	}
+	rc, err := s.st.Router(req.RouterID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, api.ErrBadCode, err)
+		return
+	}
+	want := strings.TrimSpace(req.Primary)
+	if want == "" {
+		if err := s.st.SetPin(rc.ID, rc.Primary, false); err != nil {
+			writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+			return
+		}
+		s.st.Log(rc.ID, "admin", "primary", true, "ok", "auto")
+		rc.Pinned = false
+		writeJSON(w, http.StatusOK, api.SyncResponse{Results: []api.SyncResult{s.syncRouter(rc, true, true, false)}})
+		return
+	}
+	if rc.SubURL == "" {
+		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, fmt.Errorf("у роутера нет подписки"))
+		return
+	}
+	set, err := s.fetch(rc, rc.SubURL)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{
+			Code:    api.ErrSubInvalid,
+			Message: api.Message(api.ErrSubInvalid) + " " + err.Error(),
+		})
+		return
+	}
+	tag := nodes.TagPrefix + want
+	if !set.Has(tag) {
+		writeError(w, http.StatusBadRequest, api.ErrUnknownFormat, fmt.Errorf("ноды %s нет в подписке", want))
+		return
+	}
+	if err := s.st.SetPin(rc.ID, tag, true); err != nil {
+		writeError(w, http.StatusInternalServerError, api.ErrInternal, err)
+		return
+	}
+	s.st.Log(rc.ID, "admin", "primary", true, "ok", "pin "+want)
+	rc.Primary, rc.Pinned = tag, true
+	writeJSON(w, http.StatusOK, api.SyncResponse{Results: []api.SyncResult{s.syncRouter(rc, false, true, false)}})
+}
+
 // роутер в панели виден как отдельное устройство владельца
 func device(rc store.Router) nodes.Device {
 	return nodes.Device{
@@ -237,6 +284,10 @@ func (s *server) syncRouter(rc store.Router, dry, force, measure bool) api.SyncR
 		return res
 	}
 	res.Nodes = set.Names()
+	for _, tag := range set.Tags() {
+		res.Tags = append(res.Tags, strings.TrimPrefix(tag, nodes.TagPrefix))
+	}
+	res.Pinned = rc.Pinned
 	res.Speeds = shortSpeeds(rc.Speeds)
 	measure = measure || !dry && time.Since(rc.MeasuredAt) > measureEvery
 	if !force && !measure && set.Hash() == rc.NodesHash {
@@ -274,6 +325,10 @@ func (s *server) syncRouter(rc store.Router, dry, force, measure bool) api.SyncR
 		case len(speeds) > 1:
 			_ = s.st.SetSpeeds(rc.ID, speeds)
 			res.Speeds = shortSpeeds(speeds)
+			if rc.Pinned {
+				res.Message = "основная закреплена вручную, замер её не меняет"
+				break
+			}
 			if best := pickPrimary(set, speeds); best != set.Main() {
 				res.Switched = true
 				set.Primary = best

@@ -111,6 +111,14 @@ type RouterInfo struct {
 	Access  []int64 `json:"access,omitempty"`
 	SubHash string  `json:"sub_hash,omitempty"` // сверка без самой ссылки
 	Primary string  `json:"primary,omitempty"`
+	Pinned  bool    `json:"pinned,omitempty"`
+}
+
+// пустая primary возвращает выбор по замеру
+type PrimaryRequest struct {
+	Code     string `json:"code"`
+	RouterID int    `json:"router_id"`
+	Primary  string `json:"primary"`
 }
 
 type OwnerRequest struct {
@@ -220,6 +228,8 @@ type SyncResult struct {
 	Message string     `json:"message,omitempty"`
 
 	Primary  string             `json:"primary,omitempty"`
+	Pinned   bool               `json:"pinned,omitempty"`
+	Tags     []string           `json:"tags,omitempty"` // в том же порядке, что nodes
 	Switched bool               `json:"switched,omitempty"`
 	Speeds   map[string]float64 `json:"speeds,omitempty"`
 }

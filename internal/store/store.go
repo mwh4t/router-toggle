@@ -31,6 +31,7 @@ type Router struct {
 	Access []int64 // telegram id
 
 	Primary    string
+	Pinned     bool               // основная выбрана вручную
 	Speeds     map[string]float64 // мбит/с
 	MeasuredAt time.Time
 }
@@ -90,7 +91,7 @@ func Open(path string) (*Store, error) {
 }
 
 var addedColumns = []string{"display_name", "sub_url", "nodes_hash",
-	"owner", "access", "primary_tag", "speeds", "measured_at"}
+	"owner", "access", "primary_tag", "speeds", "measured_at", "pinned"}
 
 func migrate(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(routers)`)
@@ -150,14 +151,14 @@ func (s *Store) Router(id int) (Router, error) {
 
 const routerColumns = `id, name, display_name, firmware, tunnel_port, ssh_user,
 	auth_type, auth_secret, host_key, sub_url, nodes_hash,
-	owner, access, primary_tag, speeds, measured_at`
+	owner, access, primary_tag, speeds, measured_at, pinned`
 
 func scanRouter(row interface{ Scan(...any) error }) (Router, error) {
 	var r Router
-	var access, speeds, measured string
+	var access, speeds, measured, pinned string
 	err := row.Scan(&r.ID, &r.Name, &r.DisplayName, &r.Firmware, &r.TunnelPort,
 		&r.SSHUser, &r.AuthType, &r.AuthSecret, &r.HostKey, &r.SubURL, &r.NodesHash,
-		&r.Owner, &access, &r.Primary, &speeds, &measured)
+		&r.Owner, &access, &r.Primary, &speeds, &measured, &pinned)
 	if err != nil {
 		return r, err
 	}
@@ -170,6 +171,7 @@ func scanRouter(row interface{ Scan(...any) error }) (Router, error) {
 		_ = json.Unmarshal([]byte(speeds), &r.Speeds)
 	}
 	r.MeasuredAt, _ = time.Parse(time.RFC3339, measured)
+	r.Pinned = pinned == "1"
 	return r, nil
 }
 
@@ -192,6 +194,21 @@ func (s *Store) SetOwner(id int, owner string, access []int64) error {
 func (s *Store) SetPrimary(id int, primary string) error {
 	_, err := s.db.Exec(`UPDATE routers SET primary_tag = ? WHERE id = ?`, primary, id)
 	return err
+}
+
+func (s *Store) SetPin(id int, primary string, pinned bool) error {
+	flag := ""
+	if pinned {
+		flag = "1"
+	}
+	res, err := s.db.Exec(`UPDATE routers SET primary_tag = ?, pinned = ? WHERE id = ?`, primary, flag, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) SetSpeeds(id int, speeds map[string]float64) error {

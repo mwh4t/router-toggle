@@ -108,6 +108,7 @@ func main() {
 	mux.HandleFunc("/v1/routers/sub", s.handleRouterSub)
 	mux.HandleFunc("/v1/sync", s.handleSync)
 	mux.HandleFunc("/v1/routers/owner", s.handleRouterOwner)
+	mux.HandleFunc("/v1/routers/primary", s.handleRouterPrimary)
 
 	routers, err := st.Routers()
 	if err != nil {
@@ -722,7 +723,7 @@ func stateResponse(info api.RouterInfo, op string, value bool, readAt time.Time,
 func routerInfo(rc store.Router, a actor) api.RouterInfo {
 	if a.admin {
 		info := api.RouterInfo{ID: rc.ID, Name: rc.Name, Firmware: rc.Firmware, DisplayName: rc.DisplayName,
-			Owner: rc.Owner, Access: rc.Access, Primary: strings.TrimPrefix(rc.Primary, nodes.TagPrefix)}
+			Owner: rc.Owner, Access: rc.Access, Primary: strings.TrimPrefix(rc.Primary, nodes.TagPrefix), Pinned: rc.Pinned}
 		if rc.SubURL != "" {
 			sum := sha256.Sum256([]byte(rc.SubURL))
 			info.SubHash = hex.EncodeToString(sum[:])[:16]
